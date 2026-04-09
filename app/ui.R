@@ -10,7 +10,7 @@ ui <- dashboardPage(
     title = tags$span(
       tags$img(src = "https://medata.gov.co/themes/medata/logo.png",
                height = "30px", style = "margin-right:8px;"),
-      "Defunciones – Clasificación"
+      "Causas de Defunción Medellín"
     ),
     titleWidth = 320
   ),
@@ -57,82 +57,263 @@ ui <- dashboardPage(
 
       # ── INTRODUCCIÓN ───────────────────────────────────────
       tabItem("intro",
+
+        # Encabezado con fondo oscuro
         fluidRow(
           box(
             width = 12, solidHeader = TRUE, status = "primary",
-            title = "Contexto del Proyecto",
-            h2("Análisis Exploratorio de la Mortalidad en Medellín", class = "seccion"),
-            p(class = "justificado",
-              "El estudio de la mortalidad en una población constituye una herramienta esencial para ",
-              "comprender el estado de salud colectiva, identificar grupos de mayor vulnerabilidad y ",
-              "apoyar la formulación de estrategias de intervención y políticas públicas basadas en evidencia. ",
-              "En Medellín, el registro de defunciones es consolidado por las instituciones prestadoras de salud (IPS), ",
-              "reuniendo información de carácter demográfico, geográfico, temporal y clínico sobre cada fallecimiento."
+            title = tags$span(icon("info-circle"), " Contexto del Proyecto"),
+            tags$div(
+              style = "background:linear-gradient(135deg,#1a252f,#2c3e50); color:white; border-radius:10px; padding:24px 28px; margin-bottom:16px;",
+              tags$h3(style = "margin-top:0; color:#f39c12; font-weight:bold;",
+                icon("heartbeat"), " Causas de Defunción en Medellín: Análisis y Clasificación"),
+              tags$p(style = "font-size:15px; line-height:1.8; color:#ecf0f1; margin-bottom:0;",
+                "El estudio de la mortalidad constituye uno de los indicadores más relevantes en salud pública.",
+                " Este proyecto integra técnicas de ", tags$strong(style="color:#f39c12;", "análisis exploratorio de datos (EDA)"),
+                " y ", tags$strong(style="color:#f39c12;", "aprendizaje automático (Machine Learning)"),
+                " para examinar y predecir las causas de defunción registradas en Medellín entre 2012 y 2023,",
+                " a partir de variables demográficas, temporales y socioeconómicas."
+              )
             ),
-            p(class = "justificado",
-              "En este proyecto se trabaja con un conjunto de datos del ",
-              strong("Registro de Defunciones de Medellín"),
-              ", publicado en el portal de datos abiertos ",
-              tags$a(href = "https://medata.gov.co/node/16570", "MeData (medata.gov.co)", target = "_blank"),
-              ", el cual contiene aproximadamente ",
-              strong("145.000 registros"),
-              " correspondientes al periodo ",
-              strong("2012 a 2023"),
-              ". Esta base incluye variables relacionadas con sexo, edad, estado civil, nivel educativo, ",
-              "afiliación al sistema de salud, ubicación territorial y causa básica de defunción, entre otras."
-            ),
-            p(class = "justificado",
-              "El propósito principal de esta aplicación es desarrollar un ",
-              strong("Análisis Exploratorio de Datos (EDA)"),
-              " que permita examinar la estructura del conjunto de datos, reconocer distribuciones, detectar patrones ",
-              "temporales y territoriales, e identificar posibles inconsistencias o valores faltantes."
-            ),
-            p(class = "justificado",
-              "Además, este análisis constituye la base para la construcción de ",
-              strong("dashboards interactivos"),
-              " en herramientas como ",
-              strong("Shiny en R"),
-              " y ",
-              strong("Dash en Python"),
-              ", orientados a la visualización de hallazgos y a la comunicación efectiva de resultados."
-            ),
-            hr(),
             fluidRow(
-              infoBox("Cobertura temporal", "2012 - 2023",  icon = icon("calendar"),  color = "blue",   width = 4),
-              infoBox("Tamaño del dataset", "~145.000 registros", icon = icon("database"), color = "green",  width = 4),
-              infoBox("Fuente", "MeData Medellín",           icon = icon("globe"),    color = "orange", width = 4)
+              column(8,
+                h2("¿De qué trata este proyecto?", class = "seccion"),
+                p(class = "justificado",
+                  "Se trabaja con el ", strong("Registro de Defunciones de Medellín"),
+                  ", publicado en el portal de datos abiertos ",
+                  tags$a(href = "https://medata.gov.co/node/16570", "MeData (medata.gov.co)", target = "_blank"),
+                  ". El conjunto contiene aproximadamente ", strong("145.000 registros"),
+                  " del período ", strong("2012–2023"),
+                  " e incluye variables demográficas (sexo, edad, estado civil, nivel educativo),",
+                  " variables de aseguramiento en salud, información territorial y, como variable central,",
+                  " la ", strong("causa básica de defunción"), " codificada según la nomenclatura OPS 667."
+                ),
+                p(class = "justificado",
+                  "El proyecto sigue un flujo de trabajo en tres etapas. Primero, un ",
+                  strong("análisis exploratorio"), " que examina la estructura del dataset, distribuciones,",
+                  " patrones temporales y posibles inconsistencias. Segundo, el ",
+                  strong("entrenamiento de un modelo de clasificación"),
+                  " (Random Forest o Árbol de decisión) capaz de predecir el grupo de causa de muerte",
+                  " a partir de los atributos del caso. Tercero, un módulo de ",
+                  strong("predicción interactiva"),
+                  " donde el usuario puede ingresar los datos de un nuevo caso y obtener la causa de muerte",
+                  " más probable junto con las probabilidades por categoría."
+                ),
+                p(class = "justificado",
+                  "La variable objetivo del modelo es ", strong("NOM_667_OPS_GRUPO"),
+                  ", que agrupa las defunciones en grandes categorías como enfermedades del sistema circulatorio,",
+                  " causas externas, neoplasias, enfermedades infecciosas y parasitarias, entre otras.",
+                  " Esta clasificación sigue los estándares internacionales de la Organización Panamericana de la Salud (OPS)."
+                )
+              ),
+              column(4,
+                tags$div(
+                  style = "background:#2c3e50; color:white; border-radius:10px; padding:18px; text-align:center;",
+                  tags$h4(style = "margin-top:0; color:#f39c12;", icon("database"), " Dataset"),
+                  tags$hr(style = "border-color:#ffffff33;"),
+                  tags$p(style = "font-size:22px; font-weight:bold; margin:4px 0;", "~145.000"),
+                  tags$p(style = "font-size:12px; color:#bdc3c7; margin:0;", "registros"),
+                  tags$hr(style = "border-color:#ffffff33;"),
+                  tags$p(style = "font-size:22px; font-weight:bold; margin:4px 0;", "2012 – 2023"),
+                  tags$p(style = "font-size:12px; color:#bdc3c7; margin:0;", "período analizado"),
+                  tags$hr(style = "border-color:#ffffff33;"),
+                  tags$p(style = "font-size:22px; font-weight:bold; margin:4px 0;", "9"),
+                  tags$p(style = "font-size:12px; color:#bdc3c7; margin:0;", "variables de análisis"),
+                  tags$hr(style = "border-color:#ffffff33;"),
+                  tags$p(style = "font-size:22px; font-weight:bold; margin:4px 0;", "OPS 667"),
+                  tags$p(style = "font-size:12px; color:#bdc3c7; margin:0;", "nomenclatura de causas")
+                )
+              )
             )
           )
+        ),
+
+        # Tarjetas de etapas del proyecto
+        fluidRow(
+          box(
+            width = 12, solidHeader = TRUE, status = "info",
+            title = tags$span(icon("map"), " Etapas del Proyecto"),
+            fluidRow(
+              column(4,
+                tags$div(style = "border:1px solid #3498db; border-radius:8px; padding:16px; background:#eaf4fc; height:160px;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:10px;",
+                    tags$span(style = "background:#3498db; color:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold; font-size:16px;", "1"),
+                    tags$strong(style = "font-size:14px;", "Exploración de Datos (EDA)")
+                  ),
+                  tags$p(style = "font-size:13px; color:#555; margin:0;",
+                    "Resumen estadístico, distribuciones por sexo/edad/año, análisis territorial",
+                    " y relación entre variables demográficas y causas de muerte.")
+                )
+              ),
+              column(4,
+                tags$div(style = "border:1px solid #27ae60; border-radius:8px; padding:16px; background:#eafaf1; height:160px;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:10px;",
+                    tags$span(style = "background:#27ae60; color:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold; font-size:16px;", "2"),
+                    tags$strong(style = "font-size:14px;", "Entrenamiento del Modelo")
+                  ),
+                  tags$p(style = "font-size:13px; color:#555; margin:0;",
+                    "Selección de algoritmo (Random Forest / Árbol de decisión), partición",
+                    " train/test, evaluación con métricas (accuracy, kappa, precisión, recall) y matriz de confusión.")
+                )
+              ),
+              column(4,
+                tags$div(style = "border:1px solid #8e44ad; border-radius:8px; padding:16px; background:#f5eef8; height:160px;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:10px;",
+                    tags$span(style = "background:#8e44ad; color:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold; font-size:16px;", "3"),
+                    tags$strong(style = "font-size:14px;", "Predicción Interactiva")
+                  ),
+                  tags$p(style = "font-size:13px; color:#555; margin:0;",
+                    "Ingreso manual de datos de un caso (sexo, edad, régimen, año),",
+                    " predicción del grupo de causa más probable y visualización de probabilidades por categoría.")
+                )
+              )
+            )
+          )
+        ),
+
+        # Info boxes
+        fluidRow(
+          infoBox("Cobertura temporal", "2012 – 2023",       icon = icon("calendar"),    color = "blue",   width = 3),
+          infoBox("Registros",          "~145.000",           icon = icon("database"),    color = "green",  width = 3),
+          infoBox("Fuente",             "MeData Medellín",    icon = icon("globe"),       color = "orange", width = 3),
+          infoBox("Modelo",             "Random Forest / Rpart", icon = icon("cogs"),    color = "purple", width = 3)
         )
       ),
 
       # ── OBJETIVOS ─────────────────────────────────────────
       tabItem("obj",
-        box(
-          width = 12, solidHeader = TRUE, status = "success",
-          title = "Objetivos del Proyecto",
-          h2("Objetivo General", class = "seccion"),
-          p(class = "justificado",
-            "Realizar un análisis exploratorio de datos sobre el registro de defunciones de Medellín ",
-            "correspondiente al periodo 2012-2023, con el fin de comprender la estructura del conjunto ",
-            "de datos, identificar patrones de mortalidad y generar información útil para la construcción ",
-            "de herramientas interactivas de visualización y apoyo a la toma de decisiones."
-          ),
-          hr(),
-          h2("Objetivos Específicos", class = "seccion"),
-          tags$ol(
-            tags$li("Examinar la calidad y estructura del conjunto de datos, identificando tipos de variables, ",
-                    "valores faltantes, posibles inconsistencias y transformaciones necesarias para su análisis."),
-            tags$li("Describir el comportamiento de las defunciones a partir de variables demográficas como sexo, edad, ",
-                    "estado civil, nivel educativo y afiliación al sistema de salud."),
-            tags$li("Analizar la distribución temporal de la mortalidad en Medellín, identificando tendencias anuales, ",
-                    "variaciones mensuales y posibles patrones estacionales en los registros."),
-            tags$li("Explorar diferencias territoriales y poblacionales en las defunciones, con el propósito de detectar ",
-                    "grupos de riesgo y comportamientos diferenciales entre distintos segmentos de la población."),
-            tags$li("Estudiar la frecuencia y distribución de las principales causas de defunción, así como su relación ",
-                    "con variables sociodemográficas relevantes."),
-            tags$li("Generar visualizaciones claras e interactivas que faciliten la interpretación de los hallazgos y ",
-                    "sirvan como base para la implementación de dashboards en Shiny y otras herramientas analíticas.")
+
+        # Objetivo general
+        fluidRow(
+          box(
+            width = 12, solidHeader = TRUE, status = "success",
+            title = tags$span(icon("bullseye"), " Objetivo General"),
+            tags$div(
+              style = "background:linear-gradient(135deg,#1e8449,#27ae60); color:white; border-radius:10px; padding:20px 24px;",
+              tags$p(style = "font-size:15px; line-height:1.8; margin:0;",
+                "Desarrollar una aplicación interactiva que integre el ",
+                tags$strong("análisis exploratorio de datos (EDA)"),
+                " y la construcción de un ",
+                tags$strong("modelo de clasificación supervisado"),
+                " sobre el registro de defunciones de Medellín (2012–2023), con el fin de identificar",
+                " patrones de mortalidad, evaluar la capacidad predictiva de variables demográficas y",
+                " socioeconómicas, y facilitar la toma de decisiones en salud pública a través de",
+                " herramientas interactivas de visualización y predicción."
+              )
+            )
+          )
+        ),
+
+        # Objetivos específicos con tarjetas por eje temático
+        fluidRow(
+          box(
+            width = 12, solidHeader = TRUE, status = "primary",
+            title = tags$span(icon("list-ol"), " Objetivos Específicos"),
+
+            # Eje 1: Datos
+            tags$h4(style = "color:#2c3e50; border-left:4px solid #3498db; padding-left:10px; margin-bottom:12px;",
+              icon("database"), " Eje 1 — Gestión y calidad de los datos"),
+            fluidRow(
+              column(6,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#eaf4fc; margin-bottom:14px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#3498db; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "1"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Examinar la ", strong("estructura y calidad"), " del conjunto de datos, identificando tipos de",
+                      " variables, valores faltantes, inconsistencias y transformaciones necesarias para el análisis.")
+                  )
+                )
+              ),
+              column(6,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#eaf4fc; margin-bottom:14px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#3498db; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "2"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Describir el comportamiento de las defunciones mediante ", strong("variables demográficas"),
+                      " (sexo, edad, estado civil, nivel educativo y régimen de afiliación al sistema de salud).")
+                  )
+                )
+              )
+            ),
+
+            # Eje 2: EDA
+            tags$h4(style = "color:#2c3e50; border-left:4px solid #e67e22; padding-left:10px; margin-bottom:12px;",
+              icon("chart-bar"), " Eje 2 — Análisis exploratorio"),
+            fluidRow(
+              column(6,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#fef9e7; margin-bottom:14px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#e67e22; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "3"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Analizar la ", strong("distribución temporal"), " de la mortalidad, identificando tendencias anuales,",
+                      " variaciones mensuales y patrones estacionales en los registros.")
+                  )
+                )
+              ),
+              column(6,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#fef9e7; margin-bottom:14px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#e67e22; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "4"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Explorar ", strong("diferencias territoriales y poblacionales"), " para detectar grupos de riesgo",
+                      " y comportamientos diferenciales en distintos segmentos de la población de Medellín.")
+                  )
+                )
+              )
+            ),
+            fluidRow(
+              column(12,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#fef9e7; margin-bottom:14px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#e67e22; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "5"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Estudiar la frecuencia y distribución de las principales ", strong("causas de defunción (OPS 667)"),
+                      " y su relación con variables sociodemográficas relevantes, como nivel educativo y régimen de salud.")
+                  )
+                )
+              )
+            ),
+
+            # Eje 3: Modelo
+            tags$h4(style = "color:#2c3e50; border-left:4px solid #8e44ad; padding-left:10px; margin-bottom:12px;",
+              icon("cogs"), " Eje 3 — Modelado y predicción"),
+            fluidRow(
+              column(6,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#f5eef8; margin-bottom:14px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#8e44ad; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "6"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Construir y evaluar un ", strong("modelo de clasificación supervisado"),
+                      " (Random Forest / Árbol de decisión) para predecir el grupo de causa de muerte",
+                      " a partir de variables demográficas y socioeconómicas.")
+                  )
+                )
+              ),
+              column(6,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#f5eef8; margin-bottom:14px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#8e44ad; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "7"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Evaluar el rendimiento del modelo con métricas estándar (", strong("accuracy, kappa,"),
+                      " precisión, recall) y analizar la importancia de variables para interpretar",
+                      " los factores más determinantes en la predicción.")
+                  )
+                )
+              )
+            ),
+            fluidRow(
+              column(12,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; background:#f5eef8; margin-bottom:4px;",
+                  tags$div(style = "display:flex; align-items:flex-start;",
+                    tags$span(style = "background:#8e44ad; color:white; border-radius:50%; min-width:28px; height:28px; display:flex; align-items:center; justify-content:center; margin-right:10px; font-weight:bold;", "8"),
+                    tags$p(style = "font-size:13px; color:#333; margin:0;",
+                      "Implementar un módulo de ", strong("predicción interactiva"),
+                      " que permita al usuario ingresar los datos de un caso individual y obtener",
+                      " el grupo de causa de muerte más probable junto con la distribución de probabilidades por categoría.")
+                  )
+                )
+              )
+            )
           )
         )
       ),
@@ -357,61 +538,154 @@ ui <- dashboardPage(
 
       # ── EDA: Resumen ───────────────────────────────────────
       tabItem("eda_res",
+
+        # Fila 1: KPIs principales
         fluidRow(
-          valueBoxOutput("vb_total",  width = 3),
-          valueBoxOutput("vb_grupos", width = 3),
-          valueBoxOutput("vb_anio",   width = 3),
-          valueBoxOutput("vb_miss",   width = 3)
+          valueBoxOutput("vb_total",    width = 3),
+          valueBoxOutput("vb_grupos",   width = 3),
+          valueBoxOutput("vb_anio",     width = 3),
+          valueBoxOutput("vb_edad_med", width = 3)
         ),
         fluidRow(
-          box(width = 12, title = "Resumen estadístico", solidHeader = TRUE, status = "info",
-            verbatimTextOutput("resumen_str")
+          valueBoxOutput("vb_masculino", width = 3),
+          valueBoxOutput("vb_femenino",  width = 3),
+          valueBoxOutput("vb_top_causa", width = 3),
+          valueBoxOutput("vb_miss",      width = 3)
+        ),
+
+        # Fila 2: Top causas + distribución de edad
+        fluidRow(
+          box(width = 7, title = "Top 10 causas de defunción", solidHeader = TRUE, status = "primary",
+            plotlyOutput("plot_top_causas", height = 320)
+          ),
+          box(width = 5, title = "Distribución de edad", solidHeader = TRUE, status = "info",
+            plotlyOutput("plot_hist_edad", height = 320)
+          )
+        ),
+
+        # Fila 3: Valores faltantes por variable + distribución sexo
+        fluidRow(
+          box(width = 6, title = "Valores faltantes por variable (dato crudo)", solidHeader = TRUE, status = "warning",
+            plotlyOutput("plot_missing", height = 360)
+          ),
+          box(width = 3, title = "Distribución por sexo", solidHeader = TRUE, status = "success",
+            plotlyOutput("plot_sexo_pie", height = 260)
+          ),
+          box(width = 3, title = "Defunciones por mes", solidHeader = TRUE, status = "danger",
+            plotlyOutput("plot_mes_bar", height = 260)
           )
         )
       ),
 
       # ── EDA: Visualizaciones ───────────────────────────────
       tabItem("eda_viz",
+
+        # Filtro global
         fluidRow(
-          box(width = 4, title = "Opciones", solidHeader = TRUE, status = "primary",
-            selectInput("eda_var", "Variable a visualizar:",
-                        choices = c("Grupos de causa" = "NOM_667_OPS_GRUPO",
-                                    "Sexo"            = "SEXO",
-                                    "Grupo etáreo"    = "ETAREO_QUIN",
-                                    "Año"             = "ANO",
-                                    "Seg. social"     = "SEG_SOCIAL")),
-            selectInput("eda_tipo", "Tipo de gráfico:",
-                        choices = c("Barras" = "bar", "Circular" = "pie")),
-            checkboxInput("eda_pct", "Mostrar porcentaje", TRUE)
-          ),
-          box(width = 8, title = "Distribución", solidHeader = TRUE, status = "primary",
-            plotlyOutput("plot_eda", height = 400)
+          box(width = 12, solidHeader = TRUE, status = "primary",
+              title = tags$span(icon("filter"), " Filtros globales"),
+            fluidRow(
+              column(3, selectInput("filt_grupo", "Grupo de causa:",
+                                    choices = c("Todos" = "Todos", grupos_disponibles),
+                                    selected = "Todos")),
+              column(3, selectInput("filt_sexo", "Sexo:",
+                                    choices = c("Todos" = "Todos",
+                                                "Masculino" = "1", "Femenino" = "2"),
+                                    selected = "Todos")),
+              column(3, sliderInput("filt_ano", "Rango de años:",
+                                    min = 2012, max = 2023, value = c(2012, 2023), sep = "")),
+              column(3, sliderInput("filt_edad", "Rango de edad:",
+                                    min = 0, max = 99, value = c(0, 99)))
+            )
           )
         ),
+
+        # Sección 1: Distribución univariada
         fluidRow(
-          box(width = 6, title = "Distribución de edad por grupo de causa",
+          box(width = 12, solidHeader = TRUE, status = "primary",
+              title = tags$span(icon("bar-chart"), " 1. Distribución de variables"),
+            fluidRow(
+              column(3,
+                selectInput("eda_var", "Variable:",
+                            choices = c("Grupos de causa" = "NOM_667_OPS_GRUPO",
+                                        "Sexo"            = "SEXO",
+                                        "Grupo etáreo"    = "ETAREO_QUIN",
+                                        "Seg. social"     = "SEG_SOCIAL",
+                                        "Nivel educativo" = "NIVEL_EDU",
+                                        "Estado civil"    = "EST_CIVIL",
+                                        "Año"             = "ANO",
+                                        "Mes"             = "MES")),
+                selectInput("eda_tipo", "Tipo de gráfico:",
+                            choices = c("Barras" = "bar", "Circular" = "pie")),
+                checkboxInput("eda_pct", "Mostrar porcentaje", TRUE)
+              ),
+              column(9, plotlyOutput("plot_eda", height = 380))
+            )
+          )
+        ),
+
+        # Sección 2: Análisis por causa
+        fluidRow(
+          box(width = 6, title = tags$span(icon("heartbeat"), " 2a. Edad por grupo de causa"),
               solidHeader = TRUE, status = "warning",
             plotlyOutput("plot_edad_grupo", height = 350)
           ),
-          box(width = 6, title = "Evolución anual por grupo de causa",
+          box(width = 6, title = tags$span(icon("venus-mars"), " 2b. Causa por sexo"),
+              solidHeader = TRUE, status = "danger",
+            plotlyOutput("plot_causa_sexo", height = 350)
+          )
+        ),
+
+        # Sección 3: Temporal
+        fluidRow(
+          box(width = 8, title = tags$span(icon("line-chart"), " 3a. Evolución anual por grupo de causa"),
               solidHeader = TRUE, status = "success",
-            plotlyOutput("plot_trend", height = 350)
+            plotlyOutput("plot_trend", height = 320)
+          ),
+          box(width = 4, title = tags$span(icon("th"), " 3b. Defunciones por mes y año"),
+              solidHeader = TRUE, status = "info",
+            plotlyOutput("plot_heatmap_mes_ano", height = 320)
+          )
+        ),
+
+        # Sección 4: Variables socioeconómicas
+        fluidRow(
+          box(width = 6, title = tags$span(icon("graduation-cap"), " 4a. Causa por nivel educativo"),
+              solidHeader = TRUE, status = "primary",
+            plotlyOutput("plot_edu_causa", height = 340)
+          ),
+          box(width = 6, title = tags$span(icon("hospital-o"), " 4b. Causa por régimen de salud"),
+              solidHeader = TRUE, status = "warning",
+            plotlyOutput("plot_seg_causa", height = 340)
           )
         )
       ),
 
       # ── EDA: Tabla ────────────────────────────────────────
       tabItem("eda_tab",
-        box(width = 12, title = "Tabla de datos navegable",
-            solidHeader = TRUE, status = "info",
-          fluidRow(
-            column(4, selectInput("tab_grupo", "Filtrar por grupo:",
-                                   choices = c("Todos", grupos_disponibles), selected = "Todos")),
-            column(4, selectInput("tab_sexo", "Filtrar por sexo:",
-                                   choices = c("Todos", "1" = "1", "2" = "2"), selected = "Todos")),
-            column(4, numericInput("tab_filas", "Filas por página:", 10, 5, 50, 5))
-          ),
-          DTOutput("tabla_datos")
+        fluidRow(
+          box(width = 12, solidHeader = TRUE, status = "info",
+              title = tags$span(icon("table"), " Tabla de datos navegable"),
+            fluidRow(
+              column(3, selectInput("tab_grupo", "Grupo de causa:",
+                                     choices = c("Todos", grupos_disponibles), selected = "Todos")),
+              column(2, selectInput("tab_sexo", "Sexo:",
+                                     choices = c("Todos", "Masculino"="1", "Femenino"="2"),
+                                     selected = "Todos")),
+              column(3, sliderInput("tab_ano", "Año:", min = 2012, max = 2023,
+                                     value = c(2012, 2023), sep = "")),
+              column(2, sliderInput("tab_edad", "Edad:", min = 0, max = 99,
+                                     value = c(0, 99))),
+              column(2, br(),
+                     actionButton("tab_reset", "Limpiar filtros",
+                                  icon = icon("undo"), class = "btn-default btn-sm"))
+            ),
+            hr(),
+            fluidRow(
+              column(3, uiOutput("tab_conteo")),
+              column(9, DTOutput("tabla_datos"))
+            )
+          )
         )
       ),
 
