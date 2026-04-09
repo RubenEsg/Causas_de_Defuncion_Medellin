@@ -39,6 +39,25 @@ server <- function(input, output, session) {
     showNotification("✔ Modelo entrenado exitosamente", type = "message", duration = 4)
   })
 
+  # ── GRÁFICO VARIABLE OBJETIVO (pestaña Problema) ─────────
+  output$plot_target_preview <- renderPlotly({
+    df <- datos %>%
+      count(NOM_667_OPS_GRUPO) %>%
+      mutate(pct = round(n / sum(n) * 100, 1),
+             G   = substr(NOM_667_OPS_GRUPO, 1, 30)) %>%
+      arrange(desc(n))
+
+    p <- ggplot(df, aes(x = reorder(G, n), y = n, fill = G,
+                        text = paste0(G, "<br>n = ", format(n, big.mark=","),
+                                      " (", pct, "%)"))) +
+      geom_col(show.legend = FALSE) +
+      coord_flip() +
+      scale_fill_manual(values = rep(PAL, length.out = nrow(df))) +
+      labs(x = NULL, y = "Número de defunciones") +
+      theme_minimal(base_size = 11)
+    ggplotly(p, tooltip = "text")
+  })
+
   # ── VALUE BOXES EDA ──────────────────────────────────────
   output$vb_total  <- renderValueBox(
     valueBox(format(nrow(datos), big.mark = ","), "Registros totales",

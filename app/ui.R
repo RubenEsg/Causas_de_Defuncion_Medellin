@@ -139,46 +139,215 @@ ui <- dashboardPage(
 
       # ── PROBLEMA ──────────────────────────────────────────
       tabItem("prob",
-        box(
-          width = 12, solidHeader = TRUE, status = "danger",
-          title = "Planteamiento del Problema",
-          h2("Descripción", class = "seccion"),
-          p(class = "justificado",
-            "La mortalidad es uno de los indicadores más importantes en salud pública, ya que permite evaluar ",
-            "las condiciones de vida de una población, identificar desigualdades y reconocer las principales ",
-            "causas asociadas al fallecimiento."
-          ),
-          p(class = "justificado",
-            "No obstante, la magnitud del conjunto de datos y la diversidad de variables incluidas dificultan ",
-            "la identificación rápida de patrones relevantes, como tendencias en el tiempo, diferencias entre grupos ",
-            "de edad, variaciones por sexo, comportamientos territoriales o la distribución de las causas de muerte."
-          ),
-          p(class = "justificado",
-            "En este contexto, surge la necesidad de desarrollar un proceso sistemático de exploración y depuración ",
-            "de datos que permita comprender la estructura de la base, detectar anomalías y resumir la información más ",
-            "relevante de forma clara."
-          ),
-          hr(),
-          h2("Pregunta de Investigación", class = "seccion"),
-          tags$blockquote(
-            style = "font-size:16px; border-left:4px solid #e74c3c; padding-left:14px;",
-            "¿Qué patrones, tendencias y diferencias relevantes pueden identificarse en los registros de defunciones ",
-            "de Medellín entre 2012 y 2023 a partir de un análisis exploratorio de variables demográficas, temporales, ",
-            "territoriales y clínicas?"
-          ),
-          hr(),
-          h2("Dimensiones de Análisis", class = "seccion"),
-          fluidRow(
-            column(8,
-              tags$table(
-                class = "table table-bordered table-hover",
-                tags$thead(tags$tr(tags$th("Dimensión"), tags$th("Ejemplos de variables"), tags$th("Propósito"))),
-                tags$tbody(
-                  tags$tr(tags$td("Demográfica"),    tags$td("SEXO, EDAD_SIMPLE, EST_CIVIL, NIVEL_EDU"), tags$td("Caracterizar la población fallecida")),
-                  tags$tr(tags$td("Socioeconómica"), tags$td("SEG_SOCIAL"),                              tags$td("Explorar condiciones de afiliación y cobertura")),
-                  tags$tr(tags$td("Temporal"),       tags$td("ANO, MES"),                               tags$td("Identificar tendencias y variaciones en el tiempo")),
-                  tags$tr(tags$td("Poblacional"),    tags$td("ETAREO_QUIN"),                            tags$td("Comparar grupos etarios y perfiles de riesgo")),
-                  tags$tr(tags$td("Clínica"),        tags$td("NOM_667_OPS_GRUPO"),                      tags$td("Analizar las principales causas de defunción"))
+
+        # Contexto + pregunta
+        fluidRow(
+          box(
+            width = 12, solidHeader = TRUE, status = "danger",
+            title = tags$span(icon("exclamation-triangle"), " Planteamiento del Problema"),
+            fluidRow(
+              column(8,
+                p(class = "justificado",
+                  "La mortalidad es uno de los indicadores más importantes en salud pública. En Medellín, el registro ",
+                  "de defunciones acumula más de ", strong("145.000 casos entre 2012 y 2023"), " con variables demográficas, ",
+                  "socioeconómicas, temporales y clínicas. La magnitud y diversidad del dataset dificulta identificar ",
+                  "patrones sin un proceso sistemático de exploración."
+                ),
+                tags$blockquote(
+                  style = "font-size:15px; border-left:4px solid #e74c3c; padding-left:14px; margin-top:12px; background:#fdf2f2; border-radius:4px; padding:12px 14px;",
+                  tags$em("¿Qué patrones y diferencias relevantes pueden identificarse en los registros de defunciones ",
+                  "de Medellín entre 2012 y 2023 a partir de variables demográficas, temporales y clínicas?")
+                )
+              ),
+              column(4,
+                tags$div(
+                  style = "background:#2c3e50; color:white; border-radius:10px; padding:18px; text-align:center;",
+                  tags$h4(style = "margin-top:0; color:#f39c12;", icon("database"), " Dataset"),
+                  tags$hr(style = "border-color:#ffffff33;"),
+                  tags$p(style = "font-size:22px; font-weight:bold; margin:4px 0;", "~145.000"),
+                  tags$p(style = "font-size:12px; color:#bdc3c7; margin:0;", "registros"),
+                  tags$hr(style = "border-color:#ffffff33;"),
+                  tags$p(style = "font-size:22px; font-weight:bold; margin:4px 0;", "2012 – 2023"),
+                  tags$p(style = "font-size:12px; color:#bdc3c7; margin:0;", "período"),
+                  tags$hr(style = "border-color:#ffffff33;"),
+                  tags$p(style = "font-size:22px; font-weight:bold; margin:4px 0;", "9"),
+                  tags$p(style = "font-size:12px; color:#bdc3c7; margin:0;", "variables de análisis")
+                )
+              )
+            )
+          )
+        ),
+
+        # Variable objetivo
+        fluidRow(
+          box(
+            width = 12, solidHeader = TRUE, status = "warning",
+            title = tags$span(icon("star"), " Variable Objetivo — NOM_667_OPS_GRUPO"),
+            fluidRow(
+              column(5,
+                tags$div(
+                  style = "background:#fef9e7; border-left:5px solid #f39c12; border-radius:6px; padding:14px;",
+                  tags$h4(style = "margin-top:0; color:#d68910;", "¿Qué es?"),
+                  tags$p("Clasifica cada defunción en un ", strong("grupo de causa de muerte"),
+                    " según la nomenclatura OPS 667. Es la variable que el modelo aprende a predecir."),
+                  tags$h4(style = "color:#d68910;", "Tipo de variable"),
+                  tags$p(tags$span(class="label label-warning", "Categórica nominal"), " — múltiples clases"),
+                  tags$h4(style = "color:#d68910;", "Valores frecuentes"),
+                  tags$ul(style = "padding-left:18px; font-size:13px;",
+                    tags$li("Enfermedades del sistema circulatorio"),
+                    tags$li("Causas externas"),
+                    tags$li("Neoplasias (tumores)"),
+                    tags$li("Enfermedades infecciosas y parasitarias"),
+                    tags$li("Otras causas")
+                  )
+                )
+              ),
+              column(7,
+                plotlyOutput("plot_target_preview", height = 280)
+              )
+            )
+          )
+        ),
+
+        # Variables relacionadas — tarjetas
+        fluidRow(
+          box(
+            width = 12, solidHeader = TRUE, status = "primary",
+            title = tags$span(icon("th"), " Variables Relacionadas"),
+            tags$p(style = "color:#7f8c8d; margin-bottom:16px;",
+              "Estas variables se usan como predictores del modelo. En la pestaña ", strong("EDA"),
+              " se analiza cada una en detalle."
+            ),
+            fluidRow(
+
+              # EDAD_SIMPLE
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#3498db; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("user", style = "font-size:14px;")),
+                    tags$strong("EDAD_SIMPLE")
+                  ),
+                  tags$span(class = "label label-info", "Numérica continua"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "Edad en años al momento del fallecimiento. Rango: 0 – 99 años."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Alta influencia en el modelo")
+                )
+              ),
+
+              # SEXO
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#9b59b6; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("venus-mars", style = "font-size:14px;")),
+                    tags$strong("SEXO")
+                  ),
+                  tags$span(class = "label label-default", "Categórica binaria"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "1 = Masculino, 2 = Femenino. Diferencias importantes en causas externas y circulatorias."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Diferencias por grupo de causa")
+                )
+              ),
+
+              # ETAREO_QUIN
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#2ecc71; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("users", style = "font-size:14px;")),
+                    tags$strong("ETAREO_QUIN")
+                  ),
+                  tags$span(class = "label label-success", "Categórica ordinal"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "Grupo etario quinquenal: 0-4, 5-9, … 80+. Resume la edad en rangos poblacionales."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Relacionada con EDAD_SIMPLE")
+                )
+              ),
+
+              # SEG_SOCIAL
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#e74c3c; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("hospital-o", style = "font-size:14px;")),
+                    tags$strong("SEG_SOCIAL")
+                  ),
+                  tags$span(class = "label label-danger", "Categórica nominal"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "Régimen de salud: Contributivo, Subsidiado, Vinculado, Especial."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Refleja condición socioeconómica")
+                )
+              )
+            ),
+
+            fluidRow(
+
+              # NIVEL_EDU
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#f39c12; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("graduation-cap", style = "font-size:14px;")),
+                    tags$strong("NIVEL_EDU")
+                  ),
+                  tags$span(class = "label label-warning", "Categórica ordinal"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "Nivel educativo: Sin escolaridad, Primaria, Secundaria, Técnico, Universitario."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Proxy de nivel socioeconómico")
+                )
+              ),
+
+              # EST_CIVIL
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#1abc9c; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("heart", style = "font-size:14px;")),
+                    tags$strong("EST_CIVIL")
+                  ),
+                  tags$span(class = "label label-default", "Categórica nominal"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "Estado civil: Soltero, Casado, Viudo, Separado, Unión libre."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Correlaciona con redes de apoyo")
+                )
+              ),
+
+              # ANO
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#2c3e50; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("calendar", style = "font-size:14px;")),
+                    tags$strong("ANO")
+                  ),
+                  tags$span(class = "label label-default", "Numérica entera"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "Año de defunción: 2012 a 2023. Captura tendencias temporales y eventos como el COVID-19."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Tendencias a largo plazo")
+                )
+              ),
+
+              # MES
+              column(3,
+                tags$div(style = "border:1px solid #d5d8dc; border-radius:8px; padding:14px; margin-bottom:12px; background:white;",
+                  tags$div(style = "display:flex; align-items:center; margin-bottom:8px;",
+                    tags$span(style = "background:#e67e22; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; margin-right:10px;",
+                      icon("clock-o", style = "font-size:14px;")),
+                    tags$strong("MES")
+                  ),
+                  tags$span(class = "label label-default", "Numérica entera"), tags$br(), tags$br(),
+                  tags$p(style = "font-size:12px; color:#555; margin:0;",
+                    "Mes de defunción: 1 (enero) a 12 (diciembre). Detecta estacionalidad en la mortalidad."),
+                  tags$hr(style = "margin:8px 0;"),
+                  tags$small(style = "color:#7f8c8d;", icon("lightbulb-o"), " Patrones estacionales")
                 )
               )
             )
