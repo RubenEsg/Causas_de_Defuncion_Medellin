@@ -1,0 +1,1529 @@
+---
+title: "Análisis Exploratorio de Datos: Mortalidad en Medellín (2012–2023)"
+author: "Camilo Gonzales y Ruben Esguerra"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo      = TRUE,
+  warning   = FALSE,
+  message   = FALSE,
+  fig.align = "center"
+)
+```
+
+# Introducción y Contexto
+
+## Introducción
+
+El estudio de la mortalidad en una población es fundamental para comprender los
+patrones de salud, identificar grupos de riesgo y orientar políticas públicas.
+En Medellín, el registro de defunciones es administrado por las Instituciones
+Prestadoras de Servicios de Salud (IPS) y consolida información demográfica,
+geográfica, temporal y clínica de cada fallecimiento.
+
+El propósito de este proyecto es llevar a cabo un **Análisis Exploratorio de
+Datos (EDA)** sobre el conjunto de datos de mortalidad en Medellín, el cual
+incluye aproximadamente **145.000 registros** correspondientes al período
+**2012–2023**, suministrado por la Secretaría de Salud a través de la
+plataforma de datos abiertos [MeData](https://medata.gov.co/node/16570).
+
+Este análisis servirá como base para el desarrollo de dashboards interactivos
+en herramientas como **Dash** (Python) y **Shiny** (R), con fines de
+visualización y comunicación de hallazgos a tomadores de decisiones.
+
+---
+
+## Problema
+
+Aunque el sistema de registro de defunciones en Medellín recopila una gran
+variedad de variables —demográficas, geográficas, socioeconómicas, temporales
+y de causa de fallecimiento—, la magnitud y complejidad de los datos dificultan
+detectar rápidamente:
+
+- Tendencias y patrones estacionales en las defunciones.
+- Diferencias territoriales entre comunas y barrios.
+- Distinciones según sexo, edad o nivel educativo.
+- Anomalías y valores ausentes que afecten la calidad del análisis.
+
+Adicionalmente, algunas variables presentan codificaciones particulares que
+requieren transformación previa (por ejemplo, la variable `EDAD` en su formato
+original) antes de poder ser interpretadas correctamente.
+
+Por lo anterior, es esencial un procedimiento sistemático de **exploración y
+depuración** que facilite la comprensión de la estructura de los datos, la
+identificación de anomalías y la extracción de información pertinente.
+
+---
+
+## Objetivo
+
+**Objetivo general:**
+Llevar a cabo un Análisis Exploratorio de Datos (EDA) sobre el conjunto de
+información de mortalidad en Medellín entre 2012 y 2023, con el fin de
+reconocer patrones y producir insumos para la creación de paneles interactivos.
+
+**Objetivos específicos:**
+
+1. Describir la estructura y calidad del dataset: valores nulos, duplicados y
+   tipos de variables.
+2. Analizar la evolución temporal de las defunciones por año y mes.
+3. Caracterizar el perfil sociodemográfico de los fallecidos (sexo, edad,
+   estado civil, nivel educativo).
+4. Identificar las principales causas de muerte según la clasificación CIE-10
+   y la agrupación OPS.
+5. Explorar la distribución territorial de las defunciones por comuna y barrio.
+6. Examinar el régimen de seguridad social y el tipo de defunción.
+7. Detectar relaciones entre variables clave mediante análisis bivariado.
+
+---
+
+## Descripción del Dataset
+
+| Atributo                  | Detalle                                             |
+|---------------------------|-----------------------------------------------------|
+| **Fuente**                | MeData — Alcaldía de Medellín / Secretaría de Salud |
+| **URL**                   | https://medata.gov.co/node/16570                    |
+| **Período**               | 2012 – 2023                                         |
+| **Registros**             | ~145.000 defunciones                                |
+| **Variables**             | 26 columnas                                         |
+| **Última actualización**  | Septiembre 2023                                     |
+| **Licencia**              | Creative Commons CC BY-SA 4.0                       |
+| **Ruta local**            | `D:/Descargas/defunciones.csv`                      |
+
+---
+
+# Carga y Vista Preliminar del Dataset
+
+## Librerías
+
+```{r librerias}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(skimr)
+library(knitr)
+library(kableExtra)
+library(scales)
+library(forcats)
+```
+
+## Carga del Dataset
+
+```{r carga}
+df <- read_csv(
+  "D:/Descargas/defunciones.csv",
+  locale        = locale(encoding = "UTF-8"),
+  show_col_types = FALSE
+)
+```
+
+## Dimensiones
+
+```{r dimensiones}
+cat("Filas:    ", nrow(df), "\n")
+cat("Columnas: ", ncol(df), "\n")
+```
+
+> **Nota:** El dataset cuenta con aproximadamente 145.000 registros y 26 variables,
+> lo que lo convierte en una fuente rica para análisis multidimensionales. La cantidad
+> de registros garantiza robustez estadística en la mayoría de los cruces y
+> desagregaciones que se realizarán a lo largo del análisis.
+
+## Primeras Filas
+
+```{r head}
+df %>%
+  head(10) %>%
+  kable(caption = "Primeras 10 filas del dataset") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width        = TRUE,
+    font_size         = 11
+  ) %>%
+  scroll_box(width = "100%", height = "350px")
+```
+
+> En esta vista preliminar se observa la estructura general del dataset: variables
+> de identificación del registro, fechas, datos sociodemográficos del fallecido y
+> códigos de causa de muerte. Nótese que varias columnas contienen valores numéricos
+> codificados que requerirán transformación antes de su interpretación.
+
+## Tipos de Variables
+
+```{r tipos}
+glimpse(df)
+```
+
+> La mayoría de las variables demográficas (`SEXO`, `EST_CIVIL`, `NIVEL_EDU`,
+> `SEG_SOCIAL`) están codificadas como enteros, por lo que será necesaria su
+> recodificación a etiquetas legibles. La variable `EDAD` también requiere un
+> tratamiento especial dado su sistema de codificación de 4 dígitos. Las variables
+> de texto como nombres de barrio, comuna e institución presentan tipología `chr`.
+
+## Resumen Estadístico General
+
+```{r resumen}
+skim(df)
+```
+
+> El resumen estadístico revela las distribuciones de las variables numéricas y
+> la presencia de valores faltantes. Las variables categóricas codificadas muestran
+> rangos reducidos que confirman su naturaleza discreta. Este panorama inicial orienta
+> los pasos de limpieza y transformación que se abordan en la siguiente sección.
+
+---
+
+# Calidad de los Datos
+
+## Valores Nulos
+
+```{r nulos_detalle}
+nulos_detalle <- df %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(everything(),
+               names_to  = "Variable",
+               values_to = "Nulos") %>%
+  mutate(
+    Porcentaje  = round(Nulos / nrow(df) * 100, 2),
+    Completitud = round(100 - Porcentaje, 2)
+  ) %>%
+  arrange(desc(Nulos))
+
+nulos_detalle %>%
+  kable(
+    caption = "Valores nulos por variable",
+    align   = c("l", "r", "r", "r")
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width        = FALSE
+  ) %>%
+  row_spec(which(nulos_detalle$Porcentaje > 30),
+           background = "#ffe0e0") %>%
+  row_spec(which(nulos_detalle$Porcentaje > 0 &
+                 nulos_detalle$Porcentaje <= 30),
+           background = "#fff8e1")
+```
+
+```{r nulos_grafico}
+nulos_detalle %>%
+  filter(Nulos > 0) %>%
+  ggplot(aes(x = reorder(Variable, Porcentaje), y = Porcentaje,
+             fill = Porcentaje)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = paste0(Porcentaje, "%")),
+            hjust = -0.1, size = 3.2) +
+  scale_fill_gradient(low = "#fff176", high = "#e53935") +
+  coord_flip() +
+  ylim(0, 100) +
+  labs(
+    title = "Porcentaje de valores nulos por variable",
+    x     = NULL,
+    y     = "% Nulos"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> Solo 6 variables presentan valores nulos. `COD_INST` y `NOM_INST` tienen la
+> mayor nulidad (~8%), probablemente por defunciones ocurridas fuera de una
+> institución de salud. Las demás variables no superan el 4%. En general, la
+> calidad del dataset es alta.
+
+---
+
+## Duplicados
+
+```{r duplicados}
+dup_filas <- sum(duplicated(df))
+cat("Filas completamente duplicadas:", dup_filas, "\n")
+
+dup_formul <- df %>%
+  filter(!is.na(NUM_FORMUL)) %>%
+  count(NUM_FORMUL) %>%
+  filter(n > 1)
+
+cat("NUM_FORMUL repetidos:", nrow(dup_formul), "\n")
+```
+
+>  La revisión de duplicados es un paso crítico para evitar
+> inflar conteos. Si el número de filas completamente duplicadas es bajo o cero,
+> el dataset tiene buena integridad. Los `NUM_FORMUL` repetidos pueden indicar
+> registros administrativos del mismo fallecimiento en distintas instancias; se
+> recomienda conservar solo el registro más completo en esos casos antes de
+> análisis cuantitativos.
+
+---
+
+## Corrección de Tipos de Datos
+
+### Fecha de defunción
+
+```{r fecha}
+df <- df %>%
+  mutate(FECHA_DEF = as.Date(FECHA_DEF, format = "%d/%m/%Y"))
+
+cat("Rango de fechas:\n")
+cat("  Desde:", format(min(df$FECHA_DEF, na.rm = TRUE)), "\n")
+cat("  Hasta:", format(max(df$FECHA_DEF, na.rm = TRUE)), "\n")
+```
+
+> La conversión de la fecha a tipo `Date` permite realizar operaciones temporales
+> como extraer año, mes o calcular diferencias. El rango resultante debe coincidir
+> con el período declarado (2012–2023); cualquier fecha fuera de ese rango
+> representaría un error de registro que debería investigarse.
+
+### Transformación de EDAD
+
+La variable `EDAD` original usa una codificación especial de 4 dígitos:
+el primer dígito indica la **unidad de tiempo** y los tres siguientes el
+**valor**. Por ejemplo `4051` significa 51 años, `3007` significa 7 meses,
+`2015` significa 15 días.
+
+| Primer dígito | Unidad | Ejemplo | Interpretación |
+|:---:|:---:|:---:|:---|
+| 1 | Horas  | `1005` | 5 horas   |
+| 2 | Días   | `2015` | 15 días   |
+| 3 | Meses  | `3007` | 7 meses   |
+| 4 | Años   | `4051` | 51 años   |
+
+```{r edad}
+df <- df %>%
+  mutate(
+    EDAD_UNIDAD = as.integer(substr(as.character(EDAD), 1, 1)),
+    EDAD_VALOR  = as.integer(substr(as.character(EDAD), 2, 4)),
+    EDAD_ANIOS  = case_when(
+      EDAD_UNIDAD == 4 ~ EDAD_VALOR,
+      EDAD_UNIDAD == 3 ~ 0,
+      EDAD_UNIDAD == 2 ~ 0,
+      EDAD_UNIDAD == 1 ~ 0,
+      TRUE             ~ NA_real_
+    )
+  )
+
+cat("Rango de edad en años:\n")
+cat("  Mínimo:", min(df$EDAD_ANIOS, na.rm = TRUE), "\n")
+cat("  Máximo:", max(df$EDAD_ANIOS, na.rm = TRUE), "\n")
+```
+
+> La estandarización de la edad en años facilita comparaciones directas entre
+> registros. Los fallecidos con unidades distintas a años (horas, días, meses) son
+> clasificados como 0 años, lo que agrupa neonatos e infantes en la misma categoría.
+> Si el máximo supera los 120 años, esos valores deberían revisarse como posibles
+> errores de registro.
+
+### Variables categóricas
+
+```{r categoricas}
+df <- df %>%
+  mutate(
+    SEXO = case_when(
+      SEXO == 1 ~ "Masculino",
+      SEXO == 2 ~ "Femenino",
+      TRUE      ~ "Sin información"
+    ),
+    TIPO_DEFUN = case_when(
+      TIPO_DEFUN == 1 ~ "Natural",
+      TIPO_DEFUN == 2 ~ "No natural",
+      TIPO_DEFUN == 3 ~ "En estudio",
+      TRUE            ~ "Sin información"
+    ),
+    EST_CIVIL = case_when(
+      EST_CIVIL == 1 ~ "Soltero/a",
+      EST_CIVIL == 2 ~ "Casado/a",
+      EST_CIVIL == 3 ~ "Viudo/a",
+      EST_CIVIL == 4 ~ "Separado/a",
+      EST_CIVIL == 5 ~ "Unión libre",
+      EST_CIVIL == 9 ~ "Sin información",
+      TRUE           ~ "Sin información"
+    ),
+    SEG_SOCIAL = case_when(
+      SEG_SOCIAL == 1 ~ "Contributivo",
+      SEG_SOCIAL == 2 ~ "Subsidiado",
+      SEG_SOCIAL == 3 ~ "Vinculado",
+      SEG_SOCIAL == 4 ~ "Particular",
+      SEG_SOCIAL == 5 ~ "Excepción",
+      SEG_SOCIAL == 6 ~ "Indígena",
+      TRUE            ~ "Sin información"
+    ),
+    NIVEL_EDU = case_when(
+      NIVEL_EDU == 1  ~ "Preescolar",
+      NIVEL_EDU == 2  ~ "Básica primaria",
+      NIVEL_EDU == 3  ~ "Básica secundaria",
+      NIVEL_EDU == 4  ~ "Media académica",
+      NIVEL_EDU == 5  ~ "Media técnica",
+      NIVEL_EDU == 6  ~ "Normalista",
+      NIVEL_EDU == 7  ~ "Técnica profesional",
+      NIVEL_EDU == 8  ~ "Tecnológica",
+      NIVEL_EDU == 9  ~ "Profesional",
+      NIVEL_EDU == 10 ~ "Especialización",
+      NIVEL_EDU == 11 ~ "Maestría",
+      NIVEL_EDU == 12 ~ "Doctorado",
+      NIVEL_EDU == 99 ~ "Sin información",
+      TRUE            ~ "Sin información"
+    )
+  )
+```
+
+> La recodificación de las variables categóricas transforma etiquetas numéricas
+> en categorías legibles, lo que es indispensable para la correcta interpretación
+> de los gráficos y tablas posteriores. El uso de `TRUE ~ "Sin información"` como
+> categoría de fallback captura códigos no documentados o valores inesperados,
+> preservando la integridad del análisis.
+
+---
+
+## Valores Especiales Codificados
+
+```{r valores_especiales}
+especiales <- tibble::tribble(
+  ~Variable,      ~Valor_centinela, ~Conteo,
+  "NIVEL_EDU",    "99",   sum(df$NIVEL_EDU    == "Sin información", na.rm = TRUE),
+  "EST_CIVIL",    "9",    sum(df$EST_CIVIL     == "Sin información", na.rm = TRUE),
+  "COD_BARRIRES", "9999", sum(df$COD_BARRIRES  == 9999,             na.rm = TRUE),
+  "CODPTORE",     "99",   sum(df$CODPTORE      == 99,               na.rm = TRUE)
+)
+
+especiales %>%
+  mutate(Porcentaje = round(Conteo / nrow(df) * 100, 2)) %>%
+  kable(
+    caption = "Valores centinela (codifican Sin información)",
+    align   = c("l", "l", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+> Los valores centinela son códigos que en apariencia son numéricos válidos pero
+> en realidad representan ausencia de información. Su identificación es clave para
+> no incluirlos en cálculos estadísticos. En particular, `NIVEL_EDU == 99` suele
+> tener alta frecuencia en registros de personas mayores, donde la educación formal
+> no fue completamente registrada por el notificador.
+
+---
+
+## Dataset Limpio — Resumen Final
+
+```{r resumen_limpio}
+cat("Dimensiones finales del dataset limpio:\n")
+cat("  Filas:    ", nrow(df), "\n")
+cat("  Columnas: ", ncol(df), "\n\n")
+cat("Nuevas variables creadas:\n")
+cat("  - EDAD_UNIDAD : unidad de tiempo de la edad original\n")
+cat("  - EDAD_VALOR  : valor numérico de la edad original\n")
+cat("  - EDAD_ANIOS  : edad estandarizada en años\n")
+```
+
+> Tras las transformaciones realizadas, el dataset conserva la totalidad de los
+> registros originales y se enriquece con tres nuevas variables derivadas de la
+> edad. A partir de este punto, todas las variables categóricas están etiquetadas
+> y listas para análisis. El dataset limpio constituye la base sólida para los
+> análisis univariado, temporal, de causas y territorial que siguen a continuación.
+
+---
+
+# Análisis Univariado
+
+## Variables Numéricas
+
+### Edad en años
+
+```{r edad_dist}
+summary_edad <- df %>%
+  summarise(
+    Media   = round(mean(EDAD_ANIOS, na.rm = TRUE), 1),
+    Mediana = median(EDAD_ANIOS, na.rm = TRUE),
+    DE      = round(sd(EDAD_ANIOS, na.rm = TRUE), 1),
+    Mínimo  = min(EDAD_ANIOS, na.rm = TRUE),
+    Máximo  = max(EDAD_ANIOS, na.rm = TRUE)
+  )
+
+summary_edad %>%
+  kable(
+    caption = "Estadísticos descriptivos — Edad en años",
+    align   = c("r", "r", "r", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+```{r edad_hist}
+df %>%
+  filter(!is.na(EDAD_ANIOS)) %>%
+  ggplot(aes(x = EDAD_ANIOS)) +
+  geom_histogram(binwidth = 5, fill = "#1976D2", color = "white", alpha = 0.85) +
+  geom_vline(aes(xintercept = mean(EDAD_ANIOS, na.rm = TRUE)),
+             color = "#e53935", linetype = "dashed", linewidth = 0.8) +
+  labs(
+    title    = "Distribución de defunciones por edad",
+    subtitle = "Línea roja: media de edad",
+    x        = "Edad (años)",
+    y        = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+```{r edad_boxplot}
+df %>%
+  filter(!is.na(EDAD_ANIOS), !is.na(SEXO)) %>%
+  ggplot(aes(x = SEXO, y = EDAD_ANIOS, fill = SEXO)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.2, outlier.size = 0.8) +
+  scale_fill_manual(values = c("Masculino"       = "#1976D2",
+                               "Femenino"        = "#E91E63",
+                               "Sin información" = "#9E9E9E")) +
+  labs(
+    title = "Distribución de edad por sexo",
+    x     = NULL,
+    y     = "Edad (años)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+>   La distribución de la edad al momento del fallecimiento
+> presenta una marcada concentración en los grupos de mayor edad (60+ años),
+> lo que es consistente con patrones de mortalidad en países de renta media con
+> transición epidemiológica avanzada. El histograma muestra una distribución
+> asimétrica a la izquierda con una cola hacia edades jóvenes, que corresponde
+> principalmente a muertes violentas o neonatales. El boxplot por sexo revela que
+> las mujeres tienden a fallecer a edades ligeramente mayores que los hombres,
+> reflejando la mayor esperanza de vida femenina característica de la ciudad.
+
+---
+
+## Variables Categóricas
+
+### Sexo
+
+```{r sexo}
+df %>%
+  count(SEXO) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  kable(
+    caption   = "Distribución por sexo",
+    col.names = c("Sexo", "Defunciones", "Porcentaje (%)"),
+    align     = c("l", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+```{r sexo_pie}
+df %>%
+  count(SEXO) %>%
+  mutate(
+    Porcentaje = round(n / sum(n) * 100, 1),
+    etiqueta   = paste0(SEXO, "\n", Porcentaje, "%")
+  ) %>%
+  ggplot(aes(x = "", y = n, fill = SEXO)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = etiqueta),
+            position = position_stack(vjust = 0.5), size = 4) +
+  scale_fill_manual(values = c("Masculino"       = "#1976D2",
+                               "Femenino"        = "#E91E63",
+                               "Sin información" = "#9E9E9E")) +
+  labs(title = "Distribución de defunciones por sexo") +
+  theme_void() +
+  theme(legend.position = "none")
+```
+
+> El sexo masculino concentra la mayoría de las defunciones
+> registradas en el período. Esta sobremortalidad masculina es un fenómeno ampliamente
+> documentado en Colombia y en América Latina, y responde a dos factores principales:
+> una mayor exposición a causas externas de muerte (homicidios, accidentes de tránsito)
+> en edades jóvenes, y una menor adherencia a controles preventivos de salud en edades
+> adultas. La proporción de registros sin información de sexo debería ser mínima; si
+> supera el 1%, conviene revisar el proceso de captura de datos.
+
+---
+
+### Tipo de defunción
+
+```{r tipo_defun}
+df %>%
+  count(TIPO_DEFUN) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  arrange(desc(n)) %>%
+  kable(
+    caption   = "Distribución por tipo de defunción",
+    col.names = c("Tipo", "Defunciones", "Porcentaje (%)"),
+    align     = c("l", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+```{r tipo_defun_bar}
+df %>%
+  count(TIPO_DEFUN) %>%
+  ggplot(aes(x = reorder(TIPO_DEFUN, n), y = n, fill = TIPO_DEFUN)) +
+  geom_col(show.legend = FALSE, alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  ylim(0, max(table(df$TIPO_DEFUN)) * 1.15) +
+  labs(
+    title = "Defunciones por tipo de defunción",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> La gran mayoría de las defunciones corresponden a causas
+> **naturales**, lo que indica que la mortalidad en Medellín está dominada por
+> enfermedades crónicas y degenerativas más que por causas violentas. Sin embargo,
+> la proporción de muertes **no naturales** es significativa y merece atención
+> especial, pues incluye homicidios, accidentes y suicidios. La categoría
+> **"En estudio"** representa registros cuya causa aún no había sido determinada
+> al momento del cierre del dataset; su volumen puede variar entre años según la
+> oportunidad del sistema de registro.
+
+---
+
+### Estado civil
+
+```{r est_civil}
+df %>%
+  count(EST_CIVIL) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = reorder(EST_CIVIL, n), y = n)) +
+  geom_col(fill = "#00897B", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  ylim(0, max(table(df$EST_CIVIL)) * 1.15) +
+  labs(
+    title = "Defunciones por estado civil",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> La distribución por estado civil refleja en parte la
+> estructura demográfica de la ciudad. La prevalencia de fallecidos **solteros**
+> puede estar asociada a muertes en edades jóvenes (causas violentas), mientras
+> que la alta frecuencia de **viudos/as** es coherente con la mortalidad en adultos
+> mayores, donde uno de los cónyuges sobrevive al otro. La categoría **"Sin
+> información"** debe considerarse al interpretar los resultados, ya que puede
+> introducir sesgos si no se distribuye de forma aleatoria entre los grupos.
+
+---
+
+### Nivel educativo
+
+```{r nivel_edu}
+df %>%
+  count(NIVEL_EDU) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = reorder(NIVEL_EDU, n), y = n)) +
+  geom_col(fill = "#F57C00", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.2) +
+  coord_flip() +
+  ylim(0, max(table(df$NIVEL_EDU)) * 1.15) +
+  labs(
+    title = "Defunciones por nivel educativo",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> El nivel educativo de los fallecidos muestra que la
+> **básica primaria** concentra una proporción elevada de registros, lo que está
+> relacionado con la estructura etaria de la mortalidad: las personas de mayor
+> edad alcanzaron niveles educativos más bajos debido a las condiciones históricas
+> de acceso a la educación en décadas pasadas. Los niveles de educación superior
+> (profesional, especialización, maestría) tienen representación mucho menor, aunque
+> no por eso son irrelevantes en términos de análisis de inequidad en salud.
+
+---
+
+### Régimen de seguridad social
+
+```{r seg_social}
+df %>%
+  count(SEG_SOCIAL) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  arrange(desc(n)) %>%
+  kable(
+    caption   = "Distribución por régimen de seguridad social",
+    col.names = c("Régimen", "Defunciones", "Porcentaje (%)"),
+    align     = c("l", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+```{r seg_social_bar}
+df %>%
+  count(SEG_SOCIAL) %>%
+  ggplot(aes(x = reorder(SEG_SOCIAL, n), y = n, fill = SEG_SOCIAL)) +
+  geom_col(show.legend = FALSE, alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  ylim(0, max(table(df$SEG_SOCIAL)) * 1.15) +
+  labs(
+    title = "Defunciones por régimen de seguridad social",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> Los regímenes **contributivo** y **subsidiado** concentran
+> la mayor parte de los registros, en correspondencia con la estructura del Sistema
+> General de Seguridad Social en Salud de Colombia. La presencia del régimen
+> **vinculado** (personas sin afiliación formal) es un indicador de vulnerabilidad
+> socioeconómica. La proporción de fallecidos en cada régimen puede compararse con
+> la distribución poblacional de afiliados para detectar si algún régimen tiene
+> una mortalidad proporcionalmente mayor, lo que apuntaría a desigualdades en el
+> acceso o calidad de la atención.
+
+---
+
+### Grupo etario quinquenal
+
+```{r etareo}
+df %>%
+  filter(!is.na(ETAREO_QUIN), ETAREO_QUIN != "Sin informacion") %>%
+  count(ETAREO_QUIN) %>%
+  ggplot(aes(x = reorder(ETAREO_QUIN, n), y = n)) +
+  geom_col(fill = "#5C6BC0", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.2) +
+  coord_flip() +
+  ylim(0, max(table(df$ETAREO_QUIN)) * 1.15) +
+  labs(
+    title = "Defunciones por grupo etario quinquenal",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> Los grupos etarios de **75 años y más** concentran la mayor
+> carga de defunciones, confirmando el perfil de mortalidad propio de una ciudad con
+> expectativa de vida relativamente alta. Se observa también un pequeño pico en los
+> grupos de 20–34 años, asociado principalmente a muertes violentas (homicidios y
+> accidentes). Esta distribución en forma de "U" invertida, con valores altos en
+> edades extremas, es un patrón típico en entornos urbanos latinoamericanos.
+
+---
+
+# Análisis Temporal
+
+## Evolución anual de defunciones
+
+```{r evolucion_anual}
+df %>%
+  count(ANO) %>%
+  ggplot(aes(x = ANO, y = n)) +
+  geom_line(color = "#1976D2", linewidth = 1.2) +
+  geom_point(color = "#1976D2", size = 3) +
+  geom_text(aes(label = comma(n)), vjust = -1, size = 3.2) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  ylim(0, max(table(df$ANO)) * 1.15) +
+  labs(
+    title    = "Evolución anual de defunciones en Medellín",
+    subtitle = "Período 2012 – 2023",
+    x        = "Año",
+    y        = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> La tendencia general de defunciones muestra una evolución
+> que puede dividirse en dos momentos. Entre 2012 y 2019 se observa una trayectoria
+> relativamente estable, con variaciones moderadas entre años. El año **2020** marca
+> un quiebre significativo al alza, consistente con el impacto de la pandemia de
+> COVID-19, que incrementó la mortalidad de forma directa (muertes por el virus) e
+> indirecta (postergación de atención médica para otras enfermedades). A partir de
+> 2021–2022 se puede observar si los niveles se moderan o mantienen elevados, lo
+> que indica la velocidad de recuperación post-pandémica del sistema de salud.
+
+---
+
+## Estacionalidad mensual
+
+```{r estacionalidad_mes}
+df %>%
+  count(MES) %>%
+  mutate(MES_NOM = factor(MES, levels = 1:12,
+                          labels = c("Ene","Feb","Mar","Abr","May","Jun",
+                                     "Jul","Ago","Sep","Oct","Nov","Dic"))) %>%
+  ggplot(aes(x = MES_NOM, y = n, group = 1)) +
+  geom_line(color = "#7B1FA2", linewidth = 1.2) +
+  geom_point(color = "#7B1FA2", size = 3) +
+  geom_text(aes(label = comma(n)), vjust = -1, size = 3.2) +
+  ylim(0, max(table(df$MES)) * 1.15) +
+  labs(
+    title = "Estacionalidad mensual de defunciones (todos los años)",
+    x     = "Mes",
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> El patrón mensual revela una **estacionalidad moderada** a
+> lo largo del año. Los meses de inicio de año (enero–marzo) tienden a presentar
+> cifras ligeramente superiores, posiblemente por el efecto acumulado del fin de año
+> en personas con enfermedades crónicas avanzadas. Los meses de mitad de año suelen
+> mostrar un leve descenso. Este patrón debe analizarse desagregado por tipo de
+> causa: las enfermedades respiratorias acentúan el pico invernal, mientras que las
+> causas externas pueden tener mayor incidencia en diciembre por las festividades.
+
+---
+
+## Heatmap año × mes
+
+```{r heatmap_anio_mes}
+df %>%
+  count(ANO, MES) %>%
+  mutate(MES_NOM = factor(MES, levels = 1:12,
+                          labels = c("Ene","Feb","Mar","Abr","May","Jun",
+                                     "Jul","Ago","Sep","Oct","Nov","Dic"))) %>%
+  ggplot(aes(x = MES_NOM, y = factor(ANO), fill = n)) +
+  geom_tile(color = "white", linewidth = 0.4) +
+  geom_text(aes(label = comma(n)), size = 2.8) +
+  scale_fill_gradient(low = "#E3F2FD", high = "#0D47A1",
+                      name = "Defunciones") +
+  labs(
+    title = "Mapa de calor: defunciones por año y mes",
+    x     = "Mes",
+    y     = "Año"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> El mapa de calor permite identificar de un vistazo tanto la
+> estacionalidad mensual como los años atípicos. Las celdas de mayor intensidad en
+> 2020 confirman el impacto pandémico concentrado en ciertos meses (especialmente
+> abril–mayo y octubre–diciembre, períodos de pico en Colombia). La comparación
+> visual entre filas (años) ayuda a determinar si el patrón estacional se mantiene
+> estable o cambia con el tiempo, lo que tiene implicaciones para la planificación
+> de recursos hospitalarios.
+
+---
+
+## Defunciones por tipo a lo largo del tiempo
+
+```{r tipo_tiempo}
+df %>%
+  count(ANO, TIPO_DEFUN) %>%
+  ggplot(aes(x = ANO, y = n, color = TIPO_DEFUN, group = TIPO_DEFUN)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  labs(
+    title = "Evolución anual por tipo de defunción",
+    x     = "Año",
+    y     = "Número de defunciones",
+    color = "Tipo"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+> La desagregación por tipo de defunción en el tiempo muestra
+> que el incremento pandémico se canaliza casi exclusivamente a través de las muertes
+> **naturales**, dado que el COVID-19 es una causa de enfermedad. Las muertes
+> **no naturales** pueden mostrar una tendencia decreciente en el período, coherente
+> con la reducción de la violencia homicida en Medellín desde mediados de la década
+> de 2010. Los registros **"En estudio"** tienden a disminuir en los años más
+> recientes del dataset a medida que los expedientes se van cerrando.
+
+---
+
+## Defunciones por sexo a lo largo del tiempo
+
+```{r sexo_tiempo}
+df %>%
+  filter(SEXO != "Sin información") %>%
+  count(ANO, SEXO) %>%
+  ggplot(aes(x = ANO, y = n, color = SEXO, group = SEXO)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  scale_color_manual(values = c("Masculino" = "#1976D2",
+                                "Femenino"  = "#E91E63")) +
+  labs(
+    title = "Evolución anual de defunciones por sexo",
+    x     = "Año",
+    y     = "Número de defunciones",
+    color = "Sexo"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+> Ambas curvas siguen trayectorias paralelas a lo largo del
+> período, con el sexo masculino consistentemente por encima. La **brecha entre
+> sexos** (diferencia absoluta) puede haberse ampliado o reducido en el tiempo,
+> lo que indica cambios en factores de riesgo diferenciales. Un acercamiento de
+> las curvas en años recientes sugeriría avances en la reducción de violencia contra
+> hombres jóvenes; un alejamiento podría señalar mayor impacto de enfermedades
+> crónicas en hombres. En 2020, ambas curvas experimentan un alza simultánea que
+> refleja el efecto pandémico sin distinción de sexo.
+
+---
+
+## Promedio mensual por año
+
+```{r promedio_mensual}
+df %>%
+  count(ANO, MES) %>%
+  group_by(ANO) %>%
+  summarise(
+    Promedio_mensual = round(mean(n), 1),
+    Maximo_mensual   = max(n),
+    Minimo_mensual   = min(n)
+  ) %>%
+  kable(
+    caption   = "Promedio, máximo y mínimo mensual de defunciones por año",
+    col.names = c("Año", "Promedio mensual", "Máximo mensual", "Mínimo mensual"),
+    align     = c("l", "r", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+> La tabla resume la variabilidad intra-anual de las
+> defunciones. Un **rango amplio** entre el mínimo y el máximo mensual de un año
+> indica alta estacionalidad o la presencia de un evento extraordinario (como un
+> pico epidémico). El año con el promedio mensual más alto evidencia la magnitud
+> del exceso de mortalidad en ese período. Esta información es valiosa para
+> dimensionar la capacidad de respuesta del sistema de salud ante eventos de alta
+> demanda.
+
+---
+
+# Análisis de Causas de Muerte
+
+## Top 20 causas básicas (CIE-10)
+
+```{r top_causas}
+df %>%
+  filter(!is.na(N_BAS1), N_BAS1 != "Sin informacion") %>%
+  count(C_BAS1, N_BAS1) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 20) %>%
+  kable(
+    caption   = "Top 20 causas básicas de muerte (CIE-10)",
+    col.names = c("Código CIE-10", "Causa", "Defunciones"),
+    align     = c("l", "l", "r")
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width        = TRUE,
+    font_size         = 11
+  )
+```
+
+```{r top_causas_bar}
+df %>%
+  filter(!is.na(N_BAS1), N_BAS1 != "Sin informacion") %>%
+  count(N_BAS1) %>%
+  slice_max(n, n = 15) %>%
+  ggplot(aes(x = reorder(N_BAS1, n), y = n)) +
+  geom_col(fill = "#C62828", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3) +
+  coord_flip() +
+  ylim(0, max(count(df, N_BAS1)$n) * 1.15) +
+  labs(
+    title = "Top 15 causas básicas de muerte",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+> Las enfermedades del **sistema circulatorio** (infarto agudo
+> de miocardio, enfermedad cerebrovascular) lideran consistentemente las causas de
+> muerte, seguidas por enfermedades respiratorias crónicas y neoplasias. La
+> presencia de causas externas como **agresiones** entre los primeros lugares
+> refleja el contexto histórico de violencia urbana de Medellín. La clasificación
+> CIE-10 permite una lectura clínica precisa, mientras que la agrupación OPS
+> que se verá a continuación facilita el análisis de grandes tendencias. Los
+> tomadores de decisiones deben priorizar las intervenciones dirigidas a las primeras
+> tres causas, donde el impacto potencial en vidas salvadas es mayor.
+
+---
+
+## Grupos OPS
+
+```{r grupos_ops}
+df %>%
+  filter(!is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion") %>%
+  count(NOM_667_OPS_GRUPO) %>%
+  arrange(desc(n)) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  kable(
+    caption   = "Defunciones por grupo OPS",
+    col.names = c("Grupo OPS", "Defunciones", "Porcentaje (%)"),
+    align     = c("l", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+```{r grupos_ops_bar}
+df %>%
+  filter(!is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion") %>%
+  count(NOM_667_OPS_GRUPO) %>%
+  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, n), y = n)) +
+  geom_col(fill = "#6A1B9A", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3.2) +
+  coord_flip() +
+  ylim(0, max(count(df, NOM_667_OPS_GRUPO)$n) * 1.15) +
+  labs(
+    title = "Defunciones por grupo OPS",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+> La clasificación OPS agrupa las causas de muerte en grandes
+> categorías comparables internacionalmente. El dominio de las **enfermedades
+> crónicas no transmisibles** (circulatorias, neoplasias, respiratorias) sobre las
+> enfermedades transmisibles señala que Medellín ha completado en gran medida su
+> transición epidemiológica. Sin embargo, la persistencia de un grupo de **causas
+> externas** relevante diferencia a la ciudad de contextos más pacíficos, y
+> representa una carga de mortalidad prematura y evitable que debe ser abordada
+> mediante políticas de seguridad y salud pública articuladas.
+
+---
+
+## Subcategorías OPS
+
+```{r subcat_ops}
+df %>%
+  filter(!is.na(NOM_667_OPS_SUBC),
+         NOM_667_OPS_SUBC != "Sin informacion") %>%
+  count(NOM_667_OPS_SUBC) %>%
+  slice_max(n, n = 15) %>%
+  ggplot(aes(x = reorder(NOM_667_OPS_SUBC, n), y = n)) +
+  geom_col(fill = "#283593", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3) +
+  coord_flip() +
+  ylim(0, max(count(df, NOM_667_OPS_SUBC)$n) * 1.15) +
+  labs(
+    title = "Top 15 subcategorías OPS",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+> Las subcategorías OPS ofrecen un nivel de detalle intermedio
+> entre el grupo amplio y el código CIE-10 específico. Las subcategorías dominantes
+> dentro de las enfermedades circulatorias (enfermedades isquémicas del corazón,
+> enfermedades cerebrovasculares) y dentro de las causas externas (agresiones,
+> accidentes de transporte) son las que deben orientar las estrategias de prevención
+> y los programas de salud priorizados. Su evolución en el tiempo es un indicador
+> sensible del efecto de las políticas de salud pública implementadas en el período.
+
+---
+
+## Evolución anual de grupos OPS
+
+```{r grupos_ops_tiempo}
+df %>%
+  filter(!is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion") %>%
+  count(ANO, NOM_667_OPS_GRUPO) %>%
+  ggplot(aes(x = ANO, y = n,
+             color = NOM_667_OPS_GRUPO,
+             group = NOM_667_OPS_GRUPO)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  labs(
+    title  = "Evolución anual de defunciones por grupo OPS",
+    x      = "Año",
+    y      = "Número de defunciones",
+    color  = "Grupo OPS"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom",
+        legend.text     = element_text(size = 8))
+```
+
+> La evolución temporal por grupo OPS permite identificar qué
+> categorías contribuyeron al alza de 2020 (principalmente las enfermedades
+> transmisibles, que incluyen COVID-19) y cuáles mantienen tendencias independientes
+> de la pandemia. Las **causas externas** pueden mostrar una tendencia decreciente
+> asociada a la mejora en seguridad urbana, mientras que las **neoplasias** tienden
+> a crecer gradualmente como reflejo del envejecimiento poblacional. Esta gráfica es
+> uno de los insumos más valiosos para el dashboard interactivo, pues condensa toda
+> la dinámica epidemiológica en una sola visualización.
+
+---
+
+# Análisis Territorial
+
+## Defunciones por comuna
+
+```{r comuna}
+df %>%
+  filter(!is.na(COMUNA_RES), COMUNA_RES != "Sin informacion") %>%
+  count(COMUNA_RES) %>%
+  arrange(desc(n)) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  kable(
+    caption   = "Defunciones por comuna de residencia",
+    col.names = c("Comuna", "Defunciones", "Porcentaje (%)"),
+    align     = c("l", "r", "r")
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width        = FALSE
+  ) %>%
+  scroll_box(height = "400px")
+```
+
+```{r comuna_bar}
+df %>%
+  filter(!is.na(COMUNA_RES), COMUNA_RES != "Sin informacion") %>%
+  count(COMUNA_RES) %>%
+  slice_max(n, n = 20) %>%
+  ggplot(aes(x = reorder(COMUNA_RES, n), y = n)) +
+  geom_col(fill = "#00695C", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3) +
+  coord_flip() +
+  labs(
+    title = "Top 20 comunas por número de defunciones",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+> Las comunas con mayor número absoluto de defunciones
+> coinciden en general con las de mayor densidad poblacional. Sin embargo,
+> para hacer comparaciones justas entre comunas, es importante calcular **tasas
+> de mortalidad por 100.000 habitantes**, que requieren cruzar estos conteos con
+> los censos de población. Comunas como **Popular, Santa Cruz o Manrique** (zonas
+> nororiental y noroccidental) pueden presentar tasas ajustadas más altas en
+> relación con su población, lo que indicaría una mayor vulnerabilidad sanitaria
+> asociada a condiciones socioeconómicas. Esta desigualdad territorial es clave
+> para la focalización de recursos de salud pública.
+
+---
+
+## Top 20 barrios
+
+```{r barrio}
+df %>%
+  filter(!is.na(BARRIO_RES), BARRIO_RES != "Sin informacion") %>%
+  count(BARRIO_RES) %>%
+  slice_max(n, n = 20) %>%
+  ggplot(aes(x = reorder(BARRIO_RES, n), y = n)) +
+  geom_col(fill = "#558B2F", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3) +
+  coord_flip() +
+  labs(
+    title = "Top 20 barrios por número de defunciones",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+> El análisis a nivel de barrio ofrece la granularidad
+> territorial más fina disponible en el dataset. Los barrios con mayor número de
+> defunciones suelen corresponder a los más populosos o a aquellos con mayor
+> proporción de adultos mayores en su composición demográfica. Este nivel de
+> detalle es especialmente útil para el diseño de intervenciones comunitarias
+> localizadas y para el cruce con capas cartográficas en herramientas GIS o en
+> el dashboard de Shiny/Dash.
+
+---
+
+## Defunciones por institución (Top 15)
+
+```{r institucion}
+df %>%
+  filter(!is.na(NOM_INST)) %>%
+  count(NOM_INST) %>%
+  slice_max(n, n = 15) %>%
+  ggplot(aes(x = reorder(NOM_INST, n), y = n)) +
+  geom_col(fill = "#37474F", alpha = 0.85) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3) +
+  coord_flip() +
+  labs(
+    title = "Top 15 instituciones con más defunciones registradas",
+    x     = NULL,
+    y     = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+> Las instituciones que encabezan el ranking son los grandes
+> hospitales de referencia de la ciudad (Clínica Las Américas, Hospital General
+> de Medellín, Hospital Pablo Tobón Uribe, entre otros), donde se concentran los
+> casos de mayor complejidad clínica. Este análisis permite identificar los centros
+> que soportan la mayor carga de mortalidad hospitalaria, información relevante
+> para la planificación de recursos y la evaluación de la capacidad instalada del
+> sistema de salud de Medellín.
+
+---
+
+# Análisis Sociodemográfico
+
+## Pirámide poblacional de fallecidos
+
+```{r piramide}
+df %>%
+  filter(SEXO %in% c("Masculino", "Femenino"),
+         !is.na(ETAREO_QUIN),
+         ETAREO_QUIN != "Sin informacion") %>%
+  count(ETAREO_QUIN, SEXO) %>%
+  mutate(n = if_else(SEXO == "Masculino", -n, n)) %>%
+  ggplot(aes(x = ETAREO_QUIN, y = n, fill = SEXO)) +
+  geom_col(alpha = 0.85) +
+  coord_flip() +
+  scale_y_continuous(labels = function(x) comma(abs(x))) +
+  scale_fill_manual(values = c("Masculino" = "#1976D2",
+                               "Femenino"  = "#E91E63")) +
+  labs(
+    title = "Pirámide poblacional de fallecidos",
+    x     = "Grupo etario",
+    y     = "Número de defunciones",
+    fill  = "Sexo"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+> La pirámide de fallecidos invierte la forma típica de las
+> pirámides poblacionales: la base (grupos jóvenes) es estrecha y el vértice
+> superior (adultos mayores) es amplio, reflejo de que la mortalidad está
+> concentrada en edades avanzadas. La asimetría entre barras masculinas y femeninas
+> es marcada en los grupos intermedios (20–44 años), donde los hombres superan
+> ampliamente a las mujeres. Esto corresponde a la sobremortalidad masculina por
+> causas externas. En los grupos de 75+ años, la brecha se reduce e incluso puede
+> invertirse en las edades más avanzadas, donde la mayor longevidad femenina genera
+> también más defunciones absolutas de mujeres.
+
+---
+
+## Estado civil por sexo
+
+```{r est_civil_sexo}
+df %>%
+  filter(SEXO %in% c("Masculino", "Femenino"),
+         EST_CIVIL != "Sin información") %>%
+  count(EST_CIVIL, SEXO) %>%
+  ggplot(aes(x = reorder(EST_CIVIL, n), y = n, fill = SEXO)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_fill_manual(values = c("Masculino" = "#1976D2",
+                               "Femenino"  = "#E91E63")) +
+  coord_flip() +
+  labs(
+    title = "Estado civil por sexo",
+    x     = NULL,
+    y     = "Número de defunciones",
+    fill  = "Sexo"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+> La distribución del estado civil por sexo muestra patrones
+> diferenciados. La categoría **viudo/a** presenta una mayor proporción de mujeres,
+> coherente con el hecho de que ellas suelen sobrevivir a sus parejas masculinas.
+> Los hombres concentran más defunciones en la categoría **soltero**, asociada a
+> muertes jóvenes por causas externas. La categoría **unión libre** refleja los
+> patrones de formación de hogares propios de Medellín y el contexto colombiano,
+> donde las uniones consensuales son frecuentes especialmente en estratos populares.
+
+---
+
+## Nivel educativo por sexo
+
+```{r nivel_edu_sexo}
+df %>%
+  filter(SEXO %in% c("Masculino", "Femenino"),
+         NIVEL_EDU != "Sin información") %>%
+  count(NIVEL_EDU, SEXO) %>%
+  ggplot(aes(x = reorder(NIVEL_EDU, n), y = n, fill = SEXO)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_fill_manual(values = c("Masculino" = "#1976D2",
+                               "Femenino"  = "#E91E63")) +
+  coord_flip() +
+  labs(
+    title = "Nivel educativo por sexo",
+    x     = NULL,
+    y     = "Número de defunciones",
+    fill  = "Sexo"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+> El análisis del nivel educativo por sexo revela que la
+> **básica primaria** concentra defunciones de ambos sexos de forma similar,
+> dado que se trata principalmente de adultos mayores cuya educación fue limitada
+> en su época. En niveles educativos más altos (técnico, profesional, posgrado),
+> la diferencia entre sexos puede aportar información sobre inequidades en el
+> mercado laboral y en la exposición a riesgos ocupacionales. Un dominio masculino
+> en niveles bajos y jóvenes puede estar relacionado con el abandono escolar
+> temprano asociado al trabajo informal o a la vinculación con actividades de riesgo.
+
+---
+
+# Análisis Bivariado y Multivariado
+
+## Causa de muerte por sexo
+
+```{r causa_sexo}
+df %>%
+  filter(SEXO %in% c("Masculino", "Femenino"),
+         !is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion") %>%
+  count(NOM_667_OPS_GRUPO, SEXO) %>%
+  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, n), y = n, fill = SEXO)) +
+  geom_col(position = "dodge", alpha = 0.85) +
+  scale_fill_manual(values = c("Masculino" = "#1976D2",
+                               "Femenino"  = "#E91E63")) +
+  coord_flip() +
+  labs(
+    title = "Grupos OPS de causa de muerte por sexo",
+    x     = NULL,
+    y     = "Número de defunciones",
+    fill  = "Sexo"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+> La comparación de causas de muerte por sexo pone de
+> manifiesto diferencias epidemiológicas fundamentales. Las **causas externas**
+> presentan una brecha muy pronunciada a favor del sexo masculino, lo que refleja
+> la mayor exposición de los hombres a la violencia y accidentes. En contraste,
+> las **neoplasias** y algunas **enfermedades circulatorias** muestran distribuciones
+> más equilibradas o incluso con mayor peso femenino. Estas diferencias son insumos
+> clave para el diseño de campañas de prevención diferenciadas por sexo y para la
+> asignación de recursos en programas de tamizaje oncológico o cardiovascular.
+
+---
+
+## Causa de muerte por grupo etario
+
+```{r causa_etario}
+df %>%
+  filter(!is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion",
+         !is.na(ETAREO_QUIN),
+         ETAREO_QUIN != "Sin informacion") %>%
+  count(NOM_667_OPS_GRUPO, ETAREO_QUIN) %>%
+  ggplot(aes(x = ETAREO_QUIN, y = NOM_667_OPS_GRUPO, fill = n)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "#E8F5E9", high = "#1B5E20",
+                      name = "Defunciones") +
+  labs(
+    title = "Heatmap: causa de muerte por grupo etario",
+    x     = "Grupo etario",
+    y     = "Grupo OPS"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+> El heatmap evidencia que cada causa de muerte tiene un
+> **perfil etario característico**. Las enfermedades circulatorias y neoplasias
+> se concentran en los grupos de 55 años en adelante, con celdas de alta intensidad
+> en la esquina superior derecha. Las causas externas presentan su mayor densidad
+> en los grupos de 15–34 años, confirmando el patrón de mortalidad prematura
+> masculina. Las enfermedades perinatales y congénitas se restringen al grupo de
+> 0–4 años. Esta matriz es uno de los insumos más ricos para el dashboard, ya que
+> permite filtrar simultáneamente por causa y edad.
+
+---
+
+## Causa de muerte por comuna (Top 10 comunas)
+
+```{r causa_comuna}
+top_comunas <- df %>%
+  filter(!is.na(COMUNA_RES), COMUNA_RES != "Sin informacion") %>%
+  count(COMUNA_RES) %>%
+  slice_max(n, n = 10) %>%
+  pull(COMUNA_RES)
+
+df %>%
+  filter(COMUNA_RES %in% top_comunas,
+         !is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion") %>%
+  count(COMUNA_RES, NOM_667_OPS_GRUPO) %>%
+  ggplot(aes(x = COMUNA_RES, y = NOM_667_OPS_GRUPO, fill = n)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "#E3F2FD", high = "#0D47A1",
+                      name = "Defunciones") +
+  labs(
+    title = "Heatmap: causa de muerte por comuna (Top 10)",
+    x     = "Comuna",
+    y     = "Grupo OPS"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+> La distribución de causas por comuna revela si existen
+> **perfiles epidemiológicos territorialmente diferenciados**. Si todas las comunas
+> comparten un patrón similar (dominio de enfermedades circulatorias), el patrón es
+> consistente con un proceso de transición epidemiológica generalizado. Sin embargo,
+> si ciertas comunas presentan mayor intensidad en causas externas, ello apunta a
+> concentración territorial de la violencia. Esta información puede cruzarse con
+> indicadores socioeconómicos por comuna (índice de condiciones de vida, NBI) para
+> explorar determinantes sociales de la salud.
+
+---
+
+## Tipo de defunción por año y sexo
+
+```{r tipo_anio_sexo}
+df %>%
+  filter(SEXO %in% c("Masculino", "Femenino")) %>%
+  count(ANO, TIPO_DEFUN, SEXO) %>%
+  ggplot(aes(x = ANO, y = n, color = TIPO_DEFUN, group = TIPO_DEFUN)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  facet_wrap(~ SEXO) +
+  scale_x_continuous(breaks = seq(2012, 2023, 2)) +
+  labs(
+    title  = "Tipo de defunción por año y sexo",
+    x      = "Año",
+    y      = "Número de defunciones",
+    color  = "Tipo"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom",
+        axis.text.x     = element_text(angle = 45, hjust = 1))
+```
+
+> La facetización por sexo en este gráfico permite comparar
+> simultáneamente la evolución del tipo de defunción para hombres y mujeres. Si las
+> muertes **no naturales** muestran una tendencia decreciente más pronunciada en
+> hombres, ello refleja los efectos de las políticas de seguridad en Medellín durante
+> el período. En mujeres, las muertes no naturales pueden incluir una proporción
+> importante de accidentes domésticos y, en menor medida, violencia de género. El
+> incremento de muertes **naturales** en 2020 es visible en ambos paneles y confirma
+> el impacto del COVID-19 independientemente del sexo.
+
+---
+
+## Seguridad social por causa de muerte
+
+```{r seg_causa}
+df %>%
+  filter(!is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion",
+         SEG_SOCIAL != "Sin información") %>%
+  count(SEG_SOCIAL, NOM_667_OPS_GRUPO) %>%
+  ggplot(aes(x = SEG_SOCIAL, y = NOM_667_OPS_GRUPO, fill = n)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "#FFF3E0", high = "#E65100",
+                      name = "Defunciones") +
+  labs(
+    title = "Heatmap: régimen de seguridad social por causa de muerte",
+    x     = "Régimen",
+    y     = "Grupo OPS"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+> La relación entre régimen de seguridad social y causa de
+> muerte es un indicador proxy de equidad en salud. Si el régimen **subsidiado**
+> (población más vulnerable) muestra mayor concentración en causas externas o
+> enfermedades infecciosas respecto al **contributivo**, ello señala inequidades
+> en el perfil epidemiológico por estrato socioeconómico. Por su parte, el régimen
+> **vinculado** (sin afiliación) puede asociarse a diagnósticos tardíos o causas
+> mal definidas. Este análisis es relevante para evaluar si las barreras de acceso
+> al sistema de salud se traducen en diferencias en el tipo de muerte que afecta
+> a cada población.
+
+---
+
+# Hallazgos y Conclusiones
+
+## Resumen de hallazgos
+
+```{r hallazgos_tabla}
+hallazgos <- tibble::tribble(
+  ~Dimensión,        ~Hallazgo,
+  "Temporal",        "Las defunciones muestran una tendencia sostenida a lo largo del período 2012-2023, con un pico notable en 2020 atribuible al COVID-19 y variaciones estacionales identificables por mes.",
+  "Demográfica",     "El sexo masculino concentra la mayor proporción de defunciones, especialmente en grupos jóvenes por causas externas. Los grupos etarios de mayor edad presentan la frecuencia más alta de muertes naturales.",
+  "Causas",          "Las enfermedades del sistema circulatorio y las causas externas (homicidios, accidentes) se posicionan entre los principales grupos OPS, evidenciando una transición epidemiológica no completada.",
+  "Territorial",     "Algunas comunas concentran proporcionalmente más defunciones, lo que puede estar asociado a densidad poblacional, envejecimiento local y condiciones socioeconómicas diferenciales.",
+  "Calidad",         "Variables como COD_INST, NOM_INST y el nivel educativo presentan porcentajes importantes de valores nulos que limitan ciertos análisis, pero el núcleo del dataset es robusto.",
+  "Seguridad social","El régimen contributivo y subsidiado concentran la mayoría de los registros. La presencia del régimen vinculado señala grupos de población sin cobertura formal que requieren atención prioritaria."
+)
+
+hallazgos %>%
+  kable(
+    caption = "Resumen de principales hallazgos del EDA",
+    align   = c("l", "l")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                full_width = TRUE) %>%
+  column_spec(1, bold = TRUE, width = "15%") %>%
+  column_spec(2, width = "85%")
+```
+
+---
+
+## Conclusiones
+
+Este Análisis Exploratorio de Datos permitió caracterizar el comportamiento de
+la mortalidad en Medellín durante el período 2012–2023 desde múltiples
+dimensiones: temporal, demográfica, territorial y por causa de muerte.
+
+Desde la perspectiva **temporal**, Medellín exhibe una tendencia de mortalidad
+relativamente estable en el período pre-pandémico (2012–2019), con una ruptura
+clara en 2020 provocada por el COVID-19. La estacionalidad mensual es moderada
+y consistente con patrones climáticos y de comportamiento social.
+
+En cuanto al **perfil sociodemográfico**, la sobremortalidad masculina es el
+rasgo más saliente, especialmente en edades jóvenes, donde las causas externas
+(homicidios, accidentes) siguen siendo una carga desproporcionada. Las mujeres
+fallecen en promedio a edades mayores y predominantemente por causas naturales.
+El nivel educativo bajo en los fallecidos refleja el perfil de envejecimiento
+de una cohorte histórica con menor acceso a educación formal.
+
+En términos de **causas de muerte**, el dominio de las enfermedades
+circulatorias y neoplasias confirma la transición epidemiológica, aunque la
+persistencia de causas externas significativas distingue el perfil de Medellín
+del de ciudades con mayor desarrollo humano. Los grupos OPS más relevantes para
+políticas de salud son el circulatorio, las neoplasias y las causas externas.
+
+El análisis **territorial** revela desigualdades entre comunas que merecen
+atención diferenciada. La distribución de causas por territorio puede servir
+de base para la focalización de recursos y la implementación de programas
+preventivos con enfoque local.
+
+Los principales insumos generados para el desarrollo de los dashboards
+interactivos son:
+
+- Evolución temporal anual y mensual con desagregación por tipo y sexo.
+- Perfil sociodemográfico de los fallecidos por sexo, edad y estado civil.
+- Ranking y distribución de causas de muerte según clasificación CIE-10 y OPS.
+- Distribución territorial por comunas y barrios de residencia.
+- Relaciones bivariadas entre causa, sexo, grupo etario y seguridad social.
+
+Como **pasos siguientes** se recomienda: profundizar en el análisis de las
+variables con alta tasa de nulidad; calcular tasas de mortalidad ajustadas por
+edad y por 100.000 habitantes para comparaciones territoriales justas; explorar
+la codificación geográfica para cruce con capas cartográficas; y diseñar los
+paneles interactivos en **Shiny** y **Dash** con base en los patrones aquí
+identificados.
+
+
