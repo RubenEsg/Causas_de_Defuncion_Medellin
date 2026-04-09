@@ -19,7 +19,7 @@ library(scales)
 
 # ── Carga y preprocesamiento de datos ────────────────────────
 datos_raw <- tryCatch(
-  read.csv("defunciones.csv",
+  read.csv("https://raw.githubusercontent.com/RubenEsg/Causas_de_Defuncion_Medellin/main/data/defunciones.csv",
            sep = ",", encoding = "UTF-8", stringsAsFactors = FALSE),
   error = function(e) NULL
 )
