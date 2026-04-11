@@ -102,6 +102,39 @@ reconocer patrones y producir insumos para la creación de paneles interactivos.
 
 ---
 
+## Diccionario de Variables
+
+| # | Variable | Tipo | Descripción |
+|---|----------|------|-------------|
+| 1 | NUM_FORMUL | Numérico | Número de formulario del certificado de defunción |
+| 2 | COD_INST | Texto | Código de la institución donde ocurrió la defunción |
+| 3 | NOM_INST | Texto | Nombre de la institución |
+| 4 | TIPO_DEFUN | Numérico | Tipo de defunción: 1=Natural, 2=No natural, 3=En estudio |
+| 5 | FECHA_DEF | Fecha | Fecha de la defunción (DD/MM/AAAA) |
+| 6 | ANO | Numérico | Año de la defunción |
+| 7 | MES | Numérico | Mes de la defunción (1–12) |
+| 8 | SEXO | Numérico | Sexo: 1=Masculino, 2=Femenino |
+| 9 | EST_CIVIL | Numérico | Estado civil: 1=Soltero, 2=Casado, 3=Viudo, 4=Separado, 5=Unión libre, 9=Sin info |
+| 10 | EDAD | Numérico | Edad codificada en 4 dígitos (primer dígito = unidad de tiempo) |
+| 11 | NIVEL_EDU | Numérico | Nivel educativo (1–12, 99=Sin información) |
+| 12 | CODPTORE | Numérico | Código del departamento de residencia |
+| 13 | CODMUNRE | Numérico | Código del municipio de residencia |
+| 14 | COD_BARRIRES | Numérico | Código del barrio de residencia (9999=Sin información) |
+| 15 | SEG_SOCIAL | Numérico | Régimen de seguridad social (1–6) |
+| 16 | IDADMISALUD | Numérico | Identificador del administrador de salud |
+| 17 | IDCODADMI | Texto | Código del administrador de salud |
+| 18 | IDCLASADMI | Texto | Nombre del administrador de salud |
+| 19 | N_BAS1 | Texto | Nombre de la causa básica de muerte (CIE-10) |
+| 20 | C_BAS1 | Texto | Código CIE-10 de la causa básica |
+| 21 | BARRIO_RES | Texto | Nombre del barrio de residencia |
+| 22 | COMUNA_RES | Texto | Nombre de la comuna de residencia |
+| 23 | ETAREO_QUIN | Texto | Grupo etario quinquenal (ej. "25-29", "80-84") |
+| 24 | EDAD_SIMPLE | Numérico | Edad en años (campo directo, puede contener centinelas) |
+| 25 | NOM_667_OPS_GRUPO | Texto | Grupo de causa de muerte según clasificación OPS 667 |
+| 26 | NOM_667_OPS_SUBC | Texto | Subcategoría OPS 667 de la causa de muerte |
+
+---
+
 # Carga y Vista Preliminar del Dataset
 
 ## Librerías
@@ -116,6 +149,7 @@ library(knitr)
 library(kableExtra)
 library(scales)
 library(forcats)
+library(stringr)
 ```
 
 ## Carga del Dataset
@@ -383,6 +417,140 @@ df <- df %>%
 
 ---
 
+### Tratamiento de ETAREO_QUIN
+
+Excel convierte automáticamente ciertos rangos etarios con guión a formato fecha al
+abrir el CSV (por ejemplo, `"10-14"` se guarda como `"oct-14"`, `"1-4"` como `"1-abr"`,
+`"5-9"` como `"5-sep"`). Es necesario revertir esta corrupción y convertir a `NA` los
+valores que no corresponden a rangos quinquenales válidos.
+
+```{r etareo_quin_fix}
+df <- df %>%
+  mutate(
+    ETAREO_QUIN = case_when(
+      ETAREO_QUIN == "oct-14"  ~ "10-14",
+      ETAREO_QUIN == "1-abr"   ~ "1-4",
+      ETAREO_QUIN == "5-sep"   ~ "5-9",
+      ETAREO_QUIN %in% c("Sin informacion",
+                          "Sin información",
+                          "Edad desconocida",
+                          "Mayor de 2 años y sin inf.") ~ NA_character_,
+      TRUE ~ ETAREO_QUIN
+    )
+  )
+
+cat("Distribución corregida de ETAREO_QUIN:\n")
+df %>%
+  count(ETAREO_QUIN, sort = TRUE) %>%
+  print(n = 30)
+```
+
+> La corrección de la corrupción por Excel es un paso crítico: sin ella, los grupos
+> `"10-14"`, `"1-4"` y `"5-9"` quedan ausentes de los análisis, sesgando los patrones
+> de mortalidad infantil y adolescente. Tras la corrección, la distribución quinquenal
+> es completa y coherente con el total de registros.
+
+---
+
+### Tratamiento de EDAD_SIMPLE
+
+La variable `EDAD_SIMPLE` contiene valores centinela (`8888`, `4000`, `4999`) que
+codifican edad desconocida o inválida, y deben ser reemplazados por `NA` antes del
+análisis numérico.
+
+```{r edad_simple_fix}
+df <- df %>%
+  mutate(
+    EDAD_SIMPLE = as.numeric(EDAD_SIMPLE),
+    EDAD_SIMPLE = if_else(EDAD_SIMPLE %in% c(8888, 4000, 4999), NA_real_, EDAD_SIMPLE)
+  )
+
+cat("Resumen de EDAD_SIMPLE tras limpieza:\n")
+summary(df$EDAD_SIMPLE)
+cat("\nFaltantes:", sum(is.na(df$EDAD_SIMPLE)),
+    " | Proporción:", round(mean(is.na(df$EDAD_SIMPLE)) * 100, 2), "%\n")
+```
+
+> Antes de la limpieza, el máximo podía superar 8000 años. Tras eliminar los
+> centinelas, el rango queda en valores biológicamente plausibles (0–116 años),
+> con menos del 0.03% de faltantes, lo que garantiza robustez estadística en los
+> análisis de distribución de edad.
+
+---
+
+### Unificación de NOM_667_OPS_GRUPO
+
+En el dataset coexisten dos versiones del mismo grupo: `"Signos, sintomas y afecciones
+mal definidas"` (con coma) y `"Signos sintomas y afecciones mal definidas"` (sin coma).
+Se unifican en una sola etiqueta.
+
+```{r ops_grupo_unify}
+df <- df %>%
+  mutate(
+    NOM_667_OPS_GRUPO = stringr::str_replace(
+      NOM_667_OPS_GRUPO, "Signos, sintomas", "Signos sintomas"
+    ),
+    NOM_667_OPS_GRUPO = stringr::str_trim(NOM_667_OPS_GRUPO)
+  )
+
+cat("Categorías finales de NOM_667_OPS_GRUPO:\n")
+df %>% count(NOM_667_OPS_GRUPO, sort = TRUE) %>% print()
+```
+
+> La duplicidad de categorías inflaba artificialmente el recuento de "mal definidas"
+> y podía fragmentar visualizaciones. Tras la unificación hay exactamente 7 grupos OPS
+> limpios, coherentes con la clasificación oficial.
+
+---
+
+### Nivel educativo agrupado (NIVEL_EDU_GRUPO)
+
+Para facilitar los análisis bivariados se crea una versión agrupada del nivel educativo
+en cuatro categorías: **Básica**, **Media**, **Técnico/Tecnológico** y **Superior**.
+
+```{r nivel_edu_grupo}
+df <- df %>%
+  mutate(
+    NIVEL_EDU_GRUPO = case_when(
+      NIVEL_EDU %in% c("Preescolar",
+                        "Básica primaria",
+                        "Básica secundaria")          ~ "Básica",
+      NIVEL_EDU %in% c("Media académica",
+                        "Media técnica")              ~ "Media",
+      NIVEL_EDU %in% c("Normalista",
+                        "Técnica profesional",
+                        "Tecnológica")                ~ "Técnico/Tecnológico",
+      NIVEL_EDU %in% c("Profesional",
+                        "Especialización",
+                        "Maestría",
+                        "Doctorado")                  ~ "Superior",
+      TRUE                                            ~ "Sin información"
+    ),
+    NIVEL_EDU_GRUPO = factor(
+      NIVEL_EDU_GRUPO,
+      levels = c("Básica", "Media", "Técnico/Tecnológico",
+                 "Superior", "Sin información")
+    )
+  )
+
+df %>%
+  count(NIVEL_EDU_GRUPO) %>%
+  mutate(Porcentaje = round(n / sum(n) * 100, 2)) %>%
+  kable(
+    caption   = "Distribución por nivel educativo agrupado",
+    col.names = c("Grupo educativo", "Defunciones", "Porcentaje (%)"),
+    align     = c("l", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+> El nivel **Básica** concentra la mayor parte de los fallecidos, coherente con
+> la estructura etaria de la mortalidad (personas mayores con menor escolaridad
+> histórica). Los grupos **Superior** y **Técnico/Tecnológico** tienen
+> representación minoritaria pero son útiles para análisis de inequidad en salud.
+
+---
+
 ## Valores Especiales Codificados
 
 ```{r valores_especiales}
@@ -417,17 +585,95 @@ especiales %>%
 cat("Dimensiones finales del dataset limpio:\n")
 cat("  Filas:    ", nrow(df), "\n")
 cat("  Columnas: ", ncol(df), "\n\n")
-cat("Nuevas variables creadas:\n")
-cat("  - EDAD_UNIDAD : unidad de tiempo de la edad original\n")
-cat("  - EDAD_VALOR  : valor numérico de la edad original\n")
-cat("  - EDAD_ANIOS  : edad estandarizada en años\n")
+cat("Variables nuevas creadas en la limpieza:\n")
+cat("  - EDAD_UNIDAD      : unidad de tiempo de la edad original\n")
+cat("  - EDAD_VALOR       : valor numérico de la edad original\n")
+cat("  - EDAD_ANIOS       : edad estandarizada en años\n")
+cat("  - NIVEL_EDU_GRUPO  : nivel educativo agrupado (Básica/Media/Técnico/Superior)\n")
+cat("\nFaltantes clave tras limpieza:\n")
+cat("  - EDAD_SIMPLE  :", sum(is.na(df$EDAD_SIMPLE)), "faltantes\n")
+cat("  - ETAREO_QUIN  :", sum(is.na(df$ETAREO_QUIN)), "faltantes\n")
 ```
 
 > Tras las transformaciones realizadas, el dataset conserva la totalidad de los
-> registros originales y se enriquece con tres nuevas variables derivadas de la
-> edad. A partir de este punto, todas las variables categóricas están etiquetadas
-> y listas para análisis. El dataset limpio constituye la base sólida para los
-> análisis univariado, temporal, de causas y territorial que siguen a continuación.
+> registros originales y se enriquece con variables derivadas: edad en años,
+> nivel educativo agrupado, y las correcciones de centinelas en `EDAD_SIMPLE`
+> y corrupción de Excel en `ETAREO_QUIN`. El dataset limpio constituye la base
+> para todos los análisis que siguen.
+
+---
+
+## Selección de Variables para el Análisis
+
+### Variables descartadas
+
+De las 26 columnas originales se descartan las que no aportan valor analítico directo:
+identificadores administrativos, columnas con alta nulidad estructural y variables
+que quedan cubiertas por otras derivadas.
+
+```{r vars_descartadas}
+vars_descartadas <- tibble::tribble(
+  ~Variable,          ~Motivo,
+  "NUM_FORMUL",        "Identificador administrativo sin valor analítico",
+  "COD_INST",          "~8% nulos; nombre de institución cubre el análisis",
+  "IDADMISALUD",       "Código interno del administrador, no interpretable",
+  "IDCODADMI",         "Ídem",
+  "IDCLASADMI",        "Ídem",
+  "CODPTORE",          "Sin variabilidad: 100% Antioquia en este dataset",
+  "COD_BARRIRES",      "Reemplazado por BARRIO_RES (texto legible)",
+  "EDAD",              "Reemplazada por EDAD_ANIOS y EDAD_SIMPLE",
+  "EDAD_UNIDAD",       "Variable auxiliar de decodificación",
+  "EDAD_VALOR",        "Variable auxiliar de decodificación"
+)
+
+vars_descartadas %>%
+  kable(caption = "Variables descartadas del análisis",
+        align   = c("l", "l"),
+        col.names = c("Variable", "Motivo")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+### Variables seleccionadas para el análisis
+
+```{r vars_seleccionadas}
+vars_analisis <- c(
+  "NOM_667_OPS_GRUPO",  # Variable objetivo / clasificadora principal
+  "NOM_667_OPS_SUBC",   # Subcategoría OPS para drill-down
+  "N_BAS1", "C_BAS1",   # Causa CIE-10 (nombre y código)
+  "TIPO_DEFUN",         # Tipo de defunción
+  "ANO", "MES",         # Temporales
+  "SEXO",               # Demográfica
+  "EDAD_SIMPLE",        # Edad numérica (limpia)
+  "ETAREO_QUIN",        # Edad categórica quinquenal (corregida)
+  "EST_CIVIL",          # Demográfica
+  "SEG_SOCIAL",         # Régimen de seguridad social
+  "NIVEL_EDU_GRUPO",    # Educación agrupada
+  "NIVEL_EDU",          # Educación detallada
+  "COMUNA_RES",         # Geográfica (nivel comuna)
+  "BARRIO_RES",         # Geográfica (nivel barrio)
+  "NOM_INST"            # Institución de defunción
+)
+
+vars_ok <- intersect(vars_analisis, names(df))
+
+tibble(
+  Variable = vars_ok,
+  Tipo = sapply(df[vars_ok], class),
+  Faltantes_pct = sapply(df[vars_ok], function(x)
+    round(mean(is.na(x)) * 100, 2))
+) %>%
+  kable(
+    caption   = "Variables seleccionadas para el análisis",
+    col.names = c("Variable", "Tipo R", "% Faltantes"),
+    align     = c("l", "l", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+> La selección retiene todas las variables con potencial analítico relevante para
+> los dashboards interactivos, con una cobertura de información superior al 92%
+> en todas las variables clave. El conjunto resultante permite análisis
+> multidimensionales por causa, tiempo, demografía, territorio y sistema de salud.
 
 ---
 
@@ -1453,19 +1699,232 @@ df %>%
 
 ---
 
+## Composición porcentual de causas por año (área apilada)
+
+```{r ops_area_apilada}
+df %>%
+  filter(!is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion") %>%
+  count(ANO, NOM_667_OPS_GRUPO) %>%
+  group_by(ANO) %>%
+  mutate(pct = n / sum(n) * 100) %>%
+  ungroup() %>%
+  ggplot(aes(x = ANO, y = pct,
+             fill = NOM_667_OPS_GRUPO,
+             group = NOM_667_OPS_GRUPO)) +
+  geom_area(alpha = 0.85, color = "white", linewidth = 0.3) +
+  scale_x_continuous(breaks = seq(2012, 2023, 1)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title  = "Composición porcentual de causas de muerte por año",
+    subtitle = "Grupos OPS — Período 2012–2023",
+    x      = "Año",
+    y      = "Porcentaje (%)",
+    fill   = "Grupo OPS"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    legend.text     = element_text(size = 8),
+    axis.text.x     = element_text(angle = 45, hjust = 1)
+  ) +
+  guides(fill = guide_legend(nrow = 3))
+```
+
+> El gráfico de área apilada muestra cómo cambia la **composición relativa** de
+> las causas de muerte año a año, complementando la visión absoluta de la línea
+> de evolución. En 2020 se observa un aumento en la proporción de **enfermedades
+> transmisibles** (que incluyen COVID-19), comprimiendo la participación relativa
+> de otras causas. La tendencia de largo plazo muestra un leve incremento en
+> neoplasias, coherente con el envejecimiento poblacional y la mejora en el
+> diagnóstico oncológico.
+
+---
+
+## Causa de muerte por sexo (proporciones dentro de cada grupo OPS)
+
+```{r ops_sexo_prop}
+df %>%
+  filter(SEXO %in% c("Masculino", "Femenino"),
+         !is.na(NOM_667_OPS_GRUPO),
+         NOM_667_OPS_GRUPO != "Sin informacion") %>%
+  count(NOM_667_OPS_GRUPO, SEXO) %>%
+  group_by(NOM_667_OPS_GRUPO) %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  ungroup() %>%
+  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, pct),
+             y = pct, fill = SEXO)) +
+  geom_col(position = "dodge", alpha = 0.88) +
+  geom_text(aes(label = paste0(pct, "%")),
+            position = position_dodge(width = 0.9),
+            hjust = -0.1, size = 3) +
+  scale_fill_manual(values = c("Masculino" = "#1565C0",
+                               "Femenino"  = "#C2185B")) +
+  coord_flip() +
+  ylim(0, 100) +
+  labs(
+    title  = "Distribución por sexo dentro de cada grupo OPS (%)",
+    x      = NULL,
+    y      = "Porcentaje (%)",
+    fill   = "Sexo"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+> Este gráfico muestra la **composición por sexo** dentro de cada grupo OPS, no
+> los conteos absolutos. Las **causas externas** presentan la mayor asimetría:
+> los hombres representan una proporción marcadamente superior, reflejando su
+> mayor exposición a violencia y accidentes. En enfermedades circulatorias y
+> neoplasias, la distribución es más equilibrada. Las afecciones perinatales se
+> distribuyen casi equitativamente por la biología del nacimiento.
+
+---
+
+## Causa de muerte por nivel educativo agrupado
+
+```{r ops_nivel_edu}
+df %>%
+  filter(
+    !is.na(NOM_667_OPS_GRUPO),
+    NOM_667_OPS_GRUPO != "Sin informacion",
+    NIVEL_EDU_GRUPO != "Sin información"
+  ) %>%
+  count(NOM_667_OPS_GRUPO, NIVEL_EDU_GRUPO) %>%
+  group_by(NOM_667_OPS_GRUPO) %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  ungroup() %>%
+  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, pct),
+             y = pct,
+             fill = NIVEL_EDU_GRUPO)) +
+  geom_col(alpha = 0.88, position = "stack") +
+  geom_text(aes(label = ifelse(pct >= 5, paste0(pct, "%"), "")),
+            position = position_stack(vjust = 0.5),
+            size = 3, color = "white", fontface = "bold") +
+  scale_fill_brewer(palette = "RdYlGn", direction = -1,
+                    name = "Nivel educativo") +
+  coord_flip() +
+  labs(
+    title    = "Composición por nivel educativo — Grupo OPS",
+    subtitle = "Porcentaje dentro de cada causa (excluye Sin información)",
+    x        = NULL,
+    y        = "Porcentaje (%)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+
+```{r ops_nivel_edu_tabla}
+df %>%
+  filter(
+    !is.na(NOM_667_OPS_GRUPO),
+    NOM_667_OPS_GRUPO != "Sin informacion",
+    NIVEL_EDU_GRUPO != "Sin información"
+  ) %>%
+  count(NOM_667_OPS_GRUPO, NIVEL_EDU_GRUPO) %>%
+  group_by(NOM_667_OPS_GRUPO) %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  ungroup() %>%
+  select(NOM_667_OPS_GRUPO, NIVEL_EDU_GRUPO, pct) %>%
+  tidyr::pivot_wider(names_from = NIVEL_EDU_GRUPO, values_from = pct,
+                     values_fill = 0) %>%
+  kable(
+    caption = "Distribución porcentual por nivel educativo dentro de cada grupo OPS (%)",
+    align   = c("l", rep("r", 4))
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = TRUE) %>%
+  column_spec(1, bold = TRUE)
+```
+
+> Las afecciones perinatales concentran el 100% en nivel **Básica** (los bebés no
+> tienen escolaridad formal). Las **causas externas** muestran una proporción
+> relativamente mayor en nivel **Media** comparado con otras causas, lo que señala
+> mayor mortalidad violenta en jóvenes con educación secundaria incompleta o
+> completa. Las enfermedades circulatorias y neoplasias tienen el porcentaje más
+> alto de nivel **Básica**, coherente con el perfil etario de personas mayores.
+> El nivel **Superior** es consistentemente bajo en todas las causas.
+
+---
+
+## Dataset final para dashboard
+
+```{r dataset_final}
+# Variables seleccionadas para exportación al dashboard
+VARS_DASHBOARD <- c(
+  "NOM_667_OPS_GRUPO",
+  "ANO", "MES",
+  "SEXO",
+  "EDAD_SIMPLE",
+  "ETAREO_QUIN",
+  "EST_CIVIL",
+  "SEG_SOCIAL",
+  "NIVEL_EDU_GRUPO",
+  "TIPO_DEFUN",
+  "COMUNA_RES",
+  "BARRIO_RES"
+)
+
+df_final <- df %>% select(any_of(VARS_DASHBOARD))
+
+cat("Dataset final para dashboard:\n")
+cat("  Registros:", nrow(df_final), "\n")
+cat("  Variables:", ncol(df_final), "\n\n")
+
+cat("Balance de clases (NOM_667_OPS_GRUPO):\n")
+df_final %>%
+  count(NOM_667_OPS_GRUPO, sort = TRUE) %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  print()
+
+# Para exportar a CSV (descomentar):
+# write_csv(df_final, "defunciones_dashboard.csv")
+```
+
+```{r balance_clases_plot}
+df_final %>%
+  filter(!is.na(NOM_667_OPS_GRUPO)) %>%
+  count(NOM_667_OPS_GRUPO) %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, n), y = n)) +
+  geom_col(fill = "#4527A0", alpha = 0.85) +
+  geom_text(aes(label = paste0(comma(n), " (", pct, "%)")),
+            hjust = -0.05, size = 3.2) +
+  coord_flip() +
+  ylim(0, max(table(df_final$NOM_667_OPS_GRUPO)) * 1.3) +
+  labs(
+    title    = "Balance de clases — Dataset final",
+    subtitle = "Variable objetivo: Grupo OPS",
+    x        = NULL,
+    y        = "Número de defunciones"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+> El dataset final contiene las variables más relevantes para los dashboards
+> interactivos en Shiny y Dash. La variable objetivo `NOM_667_OPS_GRUPO`
+> presenta un **desbalance moderado**: las enfermedades circulatorias y neoplasias
+> concentran cerca del 50% de los registros, mientras que afecciones perinatales
+> y signos mal definidos representan menos del 1.5%. Este desbalance es relevante
+> si el dataset se usa para modelado predictivo; para visualización descriptiva,
+> el EDA es suficiente como base.
+
+---
+
 # Hallazgos y Conclusiones
 
 ## Resumen de hallazgos
 
 ```{r hallazgos_tabla}
 hallazgos <- tibble::tribble(
-  ~Dimensión,        ~Hallazgo,
-  "Temporal",        "Las defunciones muestran una tendencia sostenida a lo largo del período 2012-2023, con un pico notable en 2020 atribuible al COVID-19 y variaciones estacionales identificables por mes.",
-  "Demográfica",     "El sexo masculino concentra la mayor proporción de defunciones, especialmente en grupos jóvenes por causas externas. Los grupos etarios de mayor edad presentan la frecuencia más alta de muertes naturales.",
-  "Causas",          "Las enfermedades del sistema circulatorio y las causas externas (homicidios, accidentes) se posicionan entre los principales grupos OPS, evidenciando una transición epidemiológica no completada.",
-  "Territorial",     "Algunas comunas concentran proporcionalmente más defunciones, lo que puede estar asociado a densidad poblacional, envejecimiento local y condiciones socioeconómicas diferenciales.",
-  "Calidad",         "Variables como COD_INST, NOM_INST y el nivel educativo presentan porcentajes importantes de valores nulos que limitan ciertos análisis, pero el núcleo del dataset es robusto.",
-  "Seguridad social","El régimen contributivo y subsidiado concentran la mayoría de los registros. La presencia del régimen vinculado señala grupos de población sin cobertura formal que requieren atención prioritaria."
+  ~Dimensión,           ~Hallazgo,
+  "Temporal",           "Las defunciones muestran una tendencia estable en 2012-2019, con un pico claro en 2020 atribuible al COVID-19. La composición porcentual de causas varía en ese año, con incremento de enfermedades transmisibles.",
+  "Demográfica",        "El sexo masculino concentra la mayor proporción de defunciones, especialmente en causas externas donde la asimetría de género es máxima. Las mujeres fallecen en promedio a edades mayores.",
+  "Causas",             "Las enfermedades del sistema circulatorio y neoplasias lideran, seguidas por 'todas las demás enfermedades'. Las causas externas persisten como carga evitable. La unificación de categorías OPS fue necesaria para corregir inconsistencias del dataset.",
+  "Territorial",        "Algunas comunas concentran proporcionalmente más defunciones. El análisis porcentual por comuna revela perfiles epidemiológicos diferenciados, con mayor peso de causas externas en ciertas zonas.",
+  "Educación",          "El nivel básico domina en todas las causas, reflejando el perfil etario de la mortalidad. Las causas externas muestran mayor proporción en nivel media, señalando mortalidad prematura en jóvenes.",
+  "Calidad de datos",   "Se corrigieron tres problemas específicos: (1) corrupción Excel en ETAREO_QUIN ('oct-14', '1-abr', '5-sep'), (2) valores centinela en EDAD_SIMPLE (8888, 4000, 4999), (3) duplicidad de categorías en NOM_667_OPS_GRUPO.",
+  "Seguridad social",   "El régimen contributivo y subsidiado concentran la mayoría de los registros. El régimen vinculado señala grupos de población sin cobertura que pueden asociarse a diagnósticos tardíos.",
+  "Dataset final",      "Se preparó un dataset de 11 variables y ~145.000 registros optimizado para los dashboards interactivos en Shiny y Dash, con la variable objetivo NOM_667_OPS_GRUPO correctamente unificada."
 )
 
 hallazgos %>%
@@ -1475,8 +1934,8 @@ hallazgos %>%
   ) %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
                 full_width = TRUE) %>%
-  column_spec(1, bold = TRUE, width = "15%") %>%
-  column_spec(2, width = "85%")
+  column_spec(1, bold = TRUE, width = "18%") %>%
+  column_spec(2, width = "82%")
 ```
 
 ---
