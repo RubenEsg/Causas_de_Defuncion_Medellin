@@ -1978,11 +1978,5 @@ interactivos son:
 - Distribución territorial por comunas y barrios de residencia.
 - Relaciones bivariadas entre causa, sexo, grupo etario y seguridad social.
 
-Como **pasos siguientes** se recomienda: profundizar en el análisis de las
-variables con alta tasa de nulidad; calcular tasas de mortalidad ajustadas por
-edad y por 100.000 habitantes para comparaciones territoriales justas; explorar
-la codificación geográfica para cruce con capas cartográficas; y diseñar los
-paneles interactivos en **Shiny** y **Dash** con base en los patrones aquí
-identificados.
-
+En conjunto, estos resultados permiten comprender la estructura del dataset y constituyen una base sólida para la construcción del dashboard, facilitando la exploración interactiva y la comunicación de los patrones identificados.
 
