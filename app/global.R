@@ -38,15 +38,32 @@ datos_raw <- tryCatch({
 # ============================================================
 # ── NA del dato crudo (antes de limpieza) para el gráfico de faltantes ─
 INFO_NA_CRUDO <- if (!is.null(datos_raw)) {
-  # Códigos centinela que DANE usa para "sin información"
-  CENTINELAS <- c("", "Sin informacion", "9", "99", "999", "998")
-  datos_raw %>%
-    mutate(across(everything(), as.character)) %>%
-    summarise(across(everything(),
-                     ~ sum(is.na(.) | trimws(.) %in% CENTINELAS))) %>%
-    tidyr::pivot_longer(everything(),
-                        names_to  = "Variable",
-                        values_to = "Faltantes") %>%
+  # Códigos centinela del DANE por variable:
+  # "9"/"99" son centinelas SOLO en variables categóricas, NO en MES, EDAD, ANO.
+  CENTINELAS_POR_VAR <- list(
+    SEXO              = c("", "3",  "9",  "99"),
+    EST_CIVIL         = c("", "9",  "99"),
+    NIVEL_EDU         = c("", "99", "999"),
+    SEG_SOCIAL        = c("", "9",  "99"),
+    NOM_667_OPS_GRUPO = c("", "Sin informacion"),
+    # Variables numéricas: sólo NA/vacío y centinelas numéricos propios del DANE
+    EDAD_SIMPLE       = c("", "998", "999"),
+    ANO               = c(""),
+    MES               = c(""),
+    ETAREO_QUIN       = c("", "Sin informacion")
+  )
+  # Centinela genérico para columnas que no estén en la lista anterior
+  CENTINELAS_GENERICO <- c("", "Sin informacion")
+
+  df_char <- datos_raw %>% mutate(across(everything(), as.character))
+  vars <- names(df_char)
+
+  faltantes <- sapply(vars, function(v) {
+    cents <- if (!is.null(CENTINELAS_POR_VAR[[v]])) CENTINELAS_POR_VAR[[v]] else CENTINELAS_GENERICO
+    sum(is.na(df_char[[v]]) | trimws(df_char[[v]]) %in% cents)
+  })
+
+  tibble::tibble(Variable = vars, Faltantes = as.integer(faltantes)) %>%
     mutate(Pct = round(Faltantes / nrow(datos_raw) * 100, 1)) %>%
     arrange(desc(Faltantes))
 } else NULL
@@ -71,6 +88,16 @@ preparar_datos <- function(df) {
       trimws(NOM_667_OPS_GRUPO) != "",
       trimws(NOM_667_OPS_GRUPO) != "Sin informacion"
     )
+  
+  df <- df %>%
+    mutate(NOM_667_OPS_GRUPO = trimws(NOM_667_OPS_GRUPO)) %>%
+    mutate(NOM_667_OPS_GRUPO = ifelse(
+      grepl("Signos", NOM_667_OPS_GRUPO, ignore.case = TRUE),
+      "Signos, sintomas y afecciones mal definidas",
+      NOM_667_OPS_GRUPO
+    ))
+  
+  
   reporte$target_eliminados <- n_inicial - nrow(df)
   message("\n[1] Target (NOM_667_OPS_GRUPO)")
   message("    Eliminados por vacío/sin info: ", reporte$target_eliminados)
@@ -122,14 +149,9 @@ preparar_datos <- function(df) {
   na_edu <- sum(is.na(df$NIVEL_EDU))
   pct_edu <- round(na_edu / nrow(df) * 100, 2)
   message("\n[4] NIVEL_EDU — NAs: ", na_edu, " (", pct_edu, "%)")
-  if (pct_edu <= 5) {
-    moda_edu <- names(sort(table(df$NIVEL_EDU), decreasing = TRUE))[1]
-    df <- df %>% mutate(NIVEL_EDU = ifelse(is.na(NIVEL_EDU), moda_edu, NIVEL_EDU))
-    message("    Accion: IMPUTAR con moda = '", moda_edu, "'")
-  } else {
-    df <- df %>% mutate(NIVEL_EDU = ifelse(is.na(NIVEL_EDU), "99", NIVEL_EDU))
-    message("    Accion: CATEGORIA 'No informado'")
-  }
+  df <- df %>% filter(!is.na(NIVEL_EDU))
+  message("    Accion: ELIMINAR filas con NIVEL_EDU sin información (", pct_edu, "%)")
+  
   df$NIVEL_EDU <- factor(df$NIVEL_EDU)
   
   # ----------------------------------------------------------
@@ -221,6 +243,16 @@ preparar_datos <- function(df) {
   }
   
   # ----------------------------------------------------------
+  # 8b. CORRECCIÓN — Afecciones perinatales solo en < 2 años
+  # ----------------------------------------------------------
+  antes_perinatal <- nrow(df)
+  df <- df %>%
+    filter(!(NOM_667_OPS_GRUPO == "Ciertas afecciones originadas en el periodo perinatal"
+             & EDAD_SIMPLE >= 2))
+  eliminados_perinatal <- antes_perinatal - nrow(df)
+  message("\n[8b] Perinatales con edad >= 2 años eliminados: ", eliminados_perinatal)
+  
+  # ----------------------------------------------------------
   # 9. ETAREO_QUIN — reconstruir desde EDAD_SIMPLE limpia
   #    para garantizar coherencia interna
   # ----------------------------------------------------------
@@ -297,3 +329,14 @@ grupos_disponibles <- levels(datos_modelo$NOM_667_OPS_GRUPO)
 # ── Paleta de colores ─────────────────────────────────────────
 PAL <- c("#2C3E50","#E74C3C","#3498DB","#2ECC71","#F39C12",
          "#9B59B6","#1ABC9C","#E67E22","#D35400","#27AE60")
+
+
+# ── Cargar modelos guardados si existen ──────────────────────
+RUTA_MODELOS    <- file.path("models", "modelos_entrenados.rds")
+MODELOS_GUARDADOS <- if (file.exists(RUTA_MODELOS)) {
+  message("[global.R] ✔ Modelos encontrados — cargando desde ", RUTA_MODELOS)
+  readRDS(RUTA_MODELOS)
+} else {
+  message("[global.R] No se encontraron modelos guardados. Entrene desde la app.")
+  NULL
+}
