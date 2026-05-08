@@ -849,71 +849,22 @@ server <- function(input, output, session) {
                  "Primero entrene o cargue un modelo."))
       return()
     }
-
-    # Mapear cada input al nivel mas cercano disponible en el modelo
-    safe_factor <- function(val, ref_factor) {
-      lvls <- levels(ref_factor)
-      val  <- as.character(val)
-      if (val %in% lvls) return(factor(val, levels = lvls))
-      moda <- names(sort(table(ref_factor), decreasing = TRUE))[1]
-      factor(moda, levels = lvls)
-    }
-
     nuevo <- data.frame(
-      SEXO        = safe_factor(input$pm_sexo,   datos_modelo$SEXO),
-      EST_CIVIL   = safe_factor(input$pm_civil,  datos_modelo$EST_CIVIL),
-      NIVEL_EDU   = safe_factor(input$pm_edu,    datos_modelo$NIVEL_EDU),
-      SEG_SOCIAL  = safe_factor(input$pm_seg,    datos_modelo$SEG_SOCIAL),
-      ETAREO_QUIN = safe_factor(input$pm_etareo, datos_modelo$ETAREO_QUIN),
+      SEXO        = factor(input$pm_sexo,   levels = levels(datos_modelo$SEXO)),
+      EST_CIVIL   = factor(input$pm_civil,  levels = levels(datos_modelo$EST_CIVIL)),
+      NIVEL_EDU   = factor(input$pm_edu,    levels = levels(datos_modelo$NIVEL_EDU)),
+      SEG_SOCIAL  = factor(input$pm_seg,    levels = levels(datos_modelo$SEG_SOCIAL)),
+      ETAREO_QUIN = factor(input$pm_etareo, levels = levels(datos_modelo$ETAREO_QUIN)),
       ANO         = as.integer(input$pm_ano),
       MES         = as.integer(input$pm_mes),
       EDAD_SIMPLE = as.integer(input$pm_edad)
     )
-
-    # Detectar campos ajustados por no estar en los datos de entrenamiento
-    campos_label <- c(
-      SEXO = "Sexo", EST_CIVIL = "Estado civil", NIVEL_EDU = "Nivel educativo",
-      SEG_SOCIAL = "Seg. social", ETAREO_QUIN = "Grupo etareo"
-    )
-    inputs_orig <- c(
-      SEXO = as.character(input$pm_sexo),   EST_CIVIL = as.character(input$pm_civil),
-      NIVEL_EDU = as.character(input$pm_edu), SEG_SOCIAL = as.character(input$pm_seg),
-      ETAREO_QUIN = as.character(input$pm_etareo)
-    )
-    ajustados <- names(inputs_orig)[sapply(names(inputs_orig), function(col) {
-      !(inputs_orig[col] %in% levels(datos_modelo[[col]]))
-    })]
-
-    tryCatch({
-      pred  <- predict(mod, nuevo)
-      probs <- predict(mod, nuevo, type = "prob")
-      pm_pred_rv(as.character(pred))
-      pm_probs_rv(as.data.frame(probs))
-
-      if (length(ajustados) > 0) {
-        labels_ajustados <- paste(campos_label[ajustados], collapse = ", ")
-        output$pm_alerta <- renderUI(
-          tags$div(class = "alert alert-warning",
-            icon("exclamation-triangle"),
-            tags$strong(" Prediccion con ajuste automatico. "),
-            tags$br(),
-            paste0("El valor de '", labels_ajustados,
-                   "' no existe en los datos de entrenamiento y fue reemplazado",
-                   " por la categoria mas frecuente.")
-          )
-        )
-      } else {
-        output$pm_alerta <- renderUI(
-          tags$div(class = "alert alert-success",
-            icon("check-circle"), " Prediccion realizada correctamente."))
-      }
-    }, error = function(e) {
-      output$pm_alerta <- renderUI(
-        tags$div(class = "alert alert-danger",
-          icon("times-circle"),
-          tags$strong(" Error en la prediccion: "),
-          conditionMessage(e)))
-    })
+    pred  <- predict(mod, nuevo)
+    probs <- predict(mod, nuevo, type = "prob")
+    pm_pred_rv(as.character(pred))
+    pm_probs_rv(as.data.frame(probs))
+    output$pm_alerta <- renderUI(
+      tags$div(class = "alert alert-success", "Predicción realizada correctamente."))
   })
 
   output$pm_resultado <- renderUI({

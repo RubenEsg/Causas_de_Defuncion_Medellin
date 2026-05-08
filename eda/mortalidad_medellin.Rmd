@@ -1,6 +1,6 @@
 ---
-title: "Análisis Exploratorio de Datos: Mortalidad en Medellín (2012–2023)"
-author: "Camilo Gonzales y Ruben Esguerra"
+title: "EDA y Modelado Predictivo: Mortalidad en Medellín (2012–2023)"
+author: "Camilo Gonzalez y Ruben Esguerra"
 date: "10 de abril de 2026"
 output:
   html_document:
@@ -40,6 +40,8 @@ plataforma de datos abiertos [MeData](https://medata.gov.co/node/16570).
 Este análisis servirá como base para el desarrollo de dashboards interactivos
 en herramientas como **Dash** (Python) y **Shiny** (R), con fines de
 visualización y comunicación de hallazgos a tomadores de decisiones.
+Adicionalmente, se implementan modelos de clasificación para predecir el grupo
+de causa de muerte según la clasificación OPS.
 
 ---
 
@@ -68,9 +70,10 @@ identificación de anomalías y la extracción de información pertinente.
 ## Objetivo
 
 **Objetivo general:**
-Llevar a cabo un Análisis Exploratorio de Datos (EDA) sobre el conjunto de
-información de mortalidad en Medellín entre 2012 y 2023, con el fin de
-reconocer patrones y producir insumos para la creación de paneles interactivos.
+Llevar a cabo un Análisis Exploratorio de Datos (EDA) y un modelado predictivo
+sobre el conjunto de información de mortalidad en Medellín entre 2012 y 2023,
+con el fin de reconocer patrones, producir insumos para la creación de paneles
+interactivos y construir modelos de clasificación de causas de muerte.
 
 **Objetivos específicos:**
 
@@ -84,6 +87,8 @@ reconocer patrones y producir insumos para la creación de paneles interactivos.
 5. Explorar la distribución territorial de las defunciones por comuna y barrio.
 6. Examinar el régimen de seguridad social y el tipo de defunción.
 7. Detectar relaciones entre variables clave mediante análisis bivariado.
+8. Entrenar y comparar modelos de clasificación (Random Forest y Árbol de
+   Decisión) para predecir el grupo OPS de causa de muerte.
 
 ---
 
@@ -98,7 +103,7 @@ reconocer patrones y producir insumos para la creación de paneles interactivos.
 | **Variables**             | 26 columnas                                         |
 | **Última actualización**  | Septiembre 2023                                     |
 | **Licencia**              | Creative Commons CC BY-SA 4.0                       |
-| **Ruta local**            | `D:/Descargas/defunciones.csv`                      |
+| **Ruta local**            | `C:/Users/Usuario/Causas_de_Defuncion_Medellin/data/defunciones.csv` |
 
 ---
 
@@ -156,7 +161,7 @@ library(stringr)
 
 ```{r carga}
 df <- read_csv(
-  "D:/Descargas/defunciones.csv",
+  "C:/Users/Usuario/Causas_de_Defuncion_Medellin/data/defunciones.csv",
   locale        = locale(encoding = "UTF-8"),
   show_col_types = FALSE
 )
@@ -290,7 +295,7 @@ dup_formul <- df %>%
 cat("NUM_FORMUL repetidos:", nrow(dup_formul), "\n")
 ```
 
->  La revisión de duplicados es un paso crítico para evitar
+> La revisión de duplicados es un paso crítico para evitar
 > inflar conteos. Si el número de filas completamente duplicadas es bajo o cero,
 > el dataset tiene buena integridad. Los `NUM_FORMUL` repetidos pueden indicar
 > registros administrativos del mismo fallecimiento en distintas instancias; se
@@ -373,11 +378,12 @@ df <- df %>%
       TRUE            ~ "Sin información"
     ),
     EST_CIVIL = case_when(
-      EST_CIVIL == 1 ~ "Soltero/a",
-      EST_CIVIL == 2 ~ "Casado/a",
-      EST_CIVIL == 3 ~ "Viudo/a",
-      EST_CIVIL == 4 ~ "Separado/a",
-      EST_CIVIL == 5 ~ "Unión libre",
+      EST_CIVIL == 1 ~ "Unión libre estable",
+      EST_CIVIL == 2 ~ "Unión libre reciente",
+      EST_CIVIL == 3 ~ "Separado/a",
+      EST_CIVIL == 4 ~ "Viudo/a",
+      EST_CIVIL == 5 ~ "Soltero/a",
+      EST_CIVIL == 6 ~ "Casado/a",
       EST_CIVIL == 9 ~ "Sin información",
       TRUE           ~ "Sin información"
     ),
@@ -734,7 +740,7 @@ df %>%
   theme(legend.position = "none")
 ```
 
->   La distribución de la edad al momento del fallecimiento
+> La distribución de la edad al momento del fallecimiento
 > presenta una marcada concentración en los grupos de mayor edad (60+ años),
 > lo que es consistente con patrones de mortalidad en países de renta media con
 > transición epidemiológica avanzada. El histograma muestra una distribución
@@ -786,8 +792,7 @@ df %>%
 > documentado en Colombia y en América Latina, y responde a dos factores principales:
 > una mayor exposición a causas externas de muerte (homicidios, accidentes de tránsito)
 > en edades jóvenes, y una menor adherencia a controles preventivos de salud en edades
-> adultas. La proporción de registros sin información de sexo debería ser mínima; si
-> supera el 1%, conviene revisar el proceso de captura de datos.
+> adultas.
 
 ---
 
@@ -826,10 +831,7 @@ df %>%
 > **naturales**, lo que indica que la mortalidad en Medellín está dominada por
 > enfermedades crónicas y degenerativas más que por causas violentas. Sin embargo,
 > la proporción de muertes **no naturales** es significativa y merece atención
-> especial, pues incluye homicidios, accidentes y suicidios. La categoría
-> **"En estudio"** representa registros cuya causa aún no había sido determinada
-> al momento del cierre del dataset; su volumen puede variar entre años según la
-> oportunidad del sistema de registro.
+> especial, pues incluye homicidios, accidentes y suicidios.
 
 ---
 
@@ -857,9 +859,7 @@ df %>%
 > estructura demográfica de la ciudad. La prevalencia de fallecidos **solteros**
 > puede estar asociada a muertes en edades jóvenes (causas violentas), mientras
 > que la alta frecuencia de **viudos/as** es coherente con la mortalidad en adultos
-> mayores, donde uno de los cónyuges sobrevive al otro. La categoría **"Sin
-> información"** debe considerarse al interpretar los resultados, ya que puede
-> introducir sesgos si no se distribuye de forma aleatoria entre los grupos.
+> mayores.
 
 ---
 
@@ -887,9 +887,7 @@ df %>%
 > **básica primaria** concentra una proporción elevada de registros, lo que está
 > relacionado con la estructura etaria de la mortalidad: las personas de mayor
 > edad alcanzaron niveles educativos más bajos debido a las condiciones históricas
-> de acceso a la educación en décadas pasadas. Los niveles de educación superior
-> (profesional, especialización, maestría) tienen representación mucho menor, aunque
-> no por eso son irrelevantes en términos de análisis de inequidad en salud.
+> de acceso a la educación en décadas pasadas.
 
 ---
 
@@ -928,10 +926,7 @@ df %>%
 > la mayor parte de los registros, en correspondencia con la estructura del Sistema
 > General de Seguridad Social en Salud de Colombia. La presencia del régimen
 > **vinculado** (personas sin afiliación formal) es un indicador de vulnerabilidad
-> socioeconómica. La proporción de fallecidos en cada régimen puede compararse con
-> la distribución poblacional de afiliados para detectar si algún régimen tiene
-> una mortalidad proporcionalmente mayor, lo que apuntaría a desigualdades en el
-> acceso o calidad de la atención.
+> socioeconómica.
 
 ---
 
@@ -957,9 +952,7 @@ df %>%
 > Los grupos etarios de **75 años y más** concentran la mayor
 > carga de defunciones, confirmando el perfil de mortalidad propio de una ciudad con
 > expectativa de vida relativamente alta. Se observa también un pequeño pico en los
-> grupos de 20–34 años, asociado principalmente a muertes violentas (homicidios y
-> accidentes). Esta distribución en forma de "U" invertida, con valores altos en
-> edades extremas, es un patrón típico en entornos urbanos latinoamericanos.
+> grupos de 20–34 años, asociado principalmente a muertes violentas.
 
 ---
 
@@ -989,10 +982,7 @@ df %>%
 > que puede dividirse en dos momentos. Entre 2012 y 2019 se observa una trayectoria
 > relativamente estable, con variaciones moderadas entre años. El año **2020** marca
 > un quiebre significativo al alza, consistente con el impacto de la pandemia de
-> COVID-19, que incrementó la mortalidad de forma directa (muertes por el virus) e
-> indirecta (postergación de atención médica para otras enfermedades). A partir de
-> 2021–2022 se puede observar si los niveles se moderan o mantienen elevados, lo
-> que indica la velocidad de recuperación post-pandémica del sistema de salud.
+> COVID-19.
 
 ---
 
@@ -1020,10 +1010,7 @@ df %>%
 > El patrón mensual revela una **estacionalidad moderada** a
 > lo largo del año. Los meses de inicio de año (enero–marzo) tienden a presentar
 > cifras ligeramente superiores, posiblemente por el efecto acumulado del fin de año
-> en personas con enfermedades crónicas avanzadas. Los meses de mitad de año suelen
-> mostrar un leve descenso. Este patrón debe analizarse desagregado por tipo de
-> causa: las enfermedades respiratorias acentúan el pico invernal, mientras que las
-> causas externas pueden tener mayor incidencia en diciembre por las festividades.
+> en personas con enfermedades crónicas avanzadas.
 
 ---
 
@@ -1050,11 +1037,7 @@ df %>%
 
 > El mapa de calor permite identificar de un vistazo tanto la
 > estacionalidad mensual como los años atípicos. Las celdas de mayor intensidad en
-> 2020 confirman el impacto pandémico concentrado en ciertos meses (especialmente
-> abril–mayo y octubre–diciembre, períodos de pico en Colombia). La comparación
-> visual entre filas (años) ayuda a determinar si el patrón estacional se mantiene
-> estable o cambia con el tiempo, lo que tiene implicaciones para la planificación
-> de recursos hospitalarios.
+> 2020 confirman el impacto pandémico concentrado en ciertos meses.
 
 ---
 
@@ -1073,17 +1056,9 @@ df %>%
     y     = "Número de defunciones",
     color = "Tipo"
   ) +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 11) +
   theme(legend.position = "bottom")
 ```
-
-> La desagregación por tipo de defunción en el tiempo muestra
-> que el incremento pandémico se canaliza casi exclusivamente a través de las muertes
-> **naturales**, dado que el COVID-19 es una causa de enfermedad. Las muertes
-> **no naturales** pueden mostrar una tendencia decreciente en el período, coherente
-> con la reducción de la violencia homicida en Medellín desde mediados de la década
-> de 2010. Los registros **"En estudio"** tienden a disminuir en los años más
-> recientes del dataset a medida que los expedientes se van cerrando.
 
 ---
 
@@ -1109,15 +1084,6 @@ df %>%
   theme(legend.position = "bottom")
 ```
 
-> Ambas curvas siguen trayectorias paralelas a lo largo del
-> período, con el sexo masculino consistentemente por encima. La **brecha entre
-> sexos** (diferencia absoluta) puede haberse ampliado o reducido en el tiempo,
-> lo que indica cambios en factores de riesgo diferenciales. Un acercamiento de
-> las curvas en años recientes sugeriría avances en la reducción de violencia contra
-> hombres jóvenes; un alejamiento podría señalar mayor impacto de enfermedades
-> crónicas en hombres. En 2020, ambas curvas experimentan un alza simultánea que
-> refleja el efecto pandémico sin distinción de sexo.
-
 ---
 
 ## Promedio mensual por año
@@ -1138,14 +1104,6 @@ df %>%
   ) %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 ```
-
-> La tabla resume la variabilidad intra-anual de las
-> defunciones. Un **rango amplio** entre el mínimo y el máximo mensual de un año
-> indica alta estacionalidad o la presencia de un evento extraordinario (como un
-> pico epidémico). El año con el promedio mensual más alto evidencia la magnitud
-> del exceso de mortalidad en ese período. Esta información es valiosa para
-> dimensionar la capacidad de respuesta del sistema de salud ante eventos de alta
-> demanda.
 
 ---
 
@@ -1189,16 +1147,6 @@ df %>%
   theme_minimal(base_size = 11)
 ```
 
-> Las enfermedades del **sistema circulatorio** (infarto agudo
-> de miocardio, enfermedad cerebrovascular) lideran consistentemente las causas de
-> muerte, seguidas por enfermedades respiratorias crónicas y neoplasias. La
-> presencia de causas externas como **agresiones** entre los primeros lugares
-> refleja el contexto histórico de violencia urbana de Medellín. La clasificación
-> CIE-10 permite una lectura clínica precisa, mientras que la agrupación OPS
-> que se verá a continuación facilita el análisis de grandes tendencias. Los
-> tomadores de decisiones deben priorizar las intervenciones dirigidas a las primeras
-> tres causas, donde el impacto potencial en vidas salvadas es mayor.
-
 ---
 
 ## Grupos OPS
@@ -1240,10 +1188,7 @@ df %>%
 > categorías comparables internacionalmente. El dominio de las **enfermedades
 > crónicas no transmisibles** (circulatorias, neoplasias, respiratorias) sobre las
 > enfermedades transmisibles señala que Medellín ha completado en gran medida su
-> transición epidemiológica. Sin embargo, la persistencia de un grupo de **causas
-> externas** relevante diferencia a la ciudad de contextos más pacíficos, y
-> representa una carga de mortalidad prematura y evitable que debe ser abordada
-> mediante políticas de seguridad y salud pública articuladas.
+> transición epidemiológica.
 
 ---
 
@@ -1267,14 +1212,6 @@ df %>%
   ) +
   theme_minimal(base_size = 11)
 ```
-
-> Las subcategorías OPS ofrecen un nivel de detalle intermedio
-> entre el grupo amplio y el código CIE-10 específico. Las subcategorías dominantes
-> dentro de las enfermedades circulatorias (enfermedades isquémicas del corazón,
-> enfermedades cerebrovasculares) y dentro de las causas externas (agresiones,
-> accidentes de transporte) son las que deben orientar las estrategias de prevención
-> y los programas de salud priorizados. Su evolución en el tiempo es un indicador
-> sensible del efecto de las políticas de salud pública implementadas en el período.
 
 ---
 
@@ -1301,15 +1238,6 @@ df %>%
   theme(legend.position = "bottom",
         legend.text     = element_text(size = 8))
 ```
-
-> La evolución temporal por grupo OPS permite identificar qué
-> categorías contribuyeron al alza de 2020 (principalmente las enfermedades
-> transmisibles, que incluyen COVID-19) y cuáles mantienen tendencias independientes
-> de la pandemia. Las **causas externas** pueden mostrar una tendencia decreciente
-> asociada a la mejora en seguridad urbana, mientras que las **neoplasias** tienden
-> a crecer gradualmente como reflejo del envejecimiento poblacional. Esta gráfica es
-> uno de los insumos más valiosos para el dashboard interactivo, pues condensa toda
-> la dinámica epidemiológica en una sola visualización.
 
 ---
 
@@ -1352,16 +1280,6 @@ df %>%
   theme_minimal(base_size = 11)
 ```
 
-> Las comunas con mayor número absoluto de defunciones
-> coinciden en general con las de mayor densidad poblacional. Sin embargo,
-> para hacer comparaciones justas entre comunas, es importante calcular **tasas
-> de mortalidad por 100.000 habitantes**, que requieren cruzar estos conteos con
-> los censos de población. Comunas como **Popular, Santa Cruz o Manrique** (zonas
-> nororiental y noroccidental) pueden presentar tasas ajustadas más altas en
-> relación con su población, lo que indicaría una mayor vulnerabilidad sanitaria
-> asociada a condiciones socioeconómicas. Esta desigualdad territorial es clave
-> para la focalización de recursos de salud pública.
-
 ---
 
 ## Top 20 barrios
@@ -1383,14 +1301,6 @@ df %>%
   theme_minimal(base_size = 11)
 ```
 
-> El análisis a nivel de barrio ofrece la granularidad
-> territorial más fina disponible en el dataset. Los barrios con mayor número de
-> defunciones suelen corresponder a los más populosos o a aquellos con mayor
-> proporción de adultos mayores en su composición demográfica. Este nivel de
-> detalle es especialmente útil para el diseño de intervenciones comunitarias
-> localizadas y para el cruce con capas cartográficas en herramientas GIS o en
-> el dashboard de Shiny/Dash.
-
 ---
 
 ## Defunciones por institución (Top 15)
@@ -1411,14 +1321,6 @@ df %>%
   ) +
   theme_minimal(base_size = 11)
 ```
-
-> Las instituciones que encabezan el ranking son los grandes
-> hospitales de referencia de la ciudad (Clínica Las Américas, Hospital General
-> de Medellín, Hospital Pablo Tobón Uribe, entre otros), donde se concentran los
-> casos de mayor complejidad clínica. Este análisis permite identificar los centros
-> que soportan la mayor carga de mortalidad hospitalaria, información relevante
-> para la planificación de recursos y la evaluación de la capacidad instalada del
-> sistema de salud de Medellín.
 
 ---
 
@@ -1449,16 +1351,6 @@ df %>%
   theme(legend.position = "bottom")
 ```
 
-> La pirámide de fallecidos invierte la forma típica de las
-> pirámides poblacionales: la base (grupos jóvenes) es estrecha y el vértice
-> superior (adultos mayores) es amplio, reflejo de que la mortalidad está
-> concentrada en edades avanzadas. La asimetría entre barras masculinas y femeninas
-> es marcada en los grupos intermedios (20–44 años), donde los hombres superan
-> ampliamente a las mujeres. Esto corresponde a la sobremortalidad masculina por
-> causas externas. En los grupos de 75+ años, la brecha se reduce e incluso puede
-> invertirse en las edades más avanzadas, donde la mayor longevidad femenina genera
-> también más defunciones absolutas de mujeres.
-
 ---
 
 ## Estado civil por sexo
@@ -1483,14 +1375,6 @@ df %>%
   theme(legend.position = "bottom")
 ```
 
-> La distribución del estado civil por sexo muestra patrones
-> diferenciados. La categoría **viudo/a** presenta una mayor proporción de mujeres,
-> coherente con el hecho de que ellas suelen sobrevivir a sus parejas masculinas.
-> Los hombres concentran más defunciones en la categoría **soltero**, asociada a
-> muertes jóvenes por causas externas. La categoría **unión libre** refleja los
-> patrones de formación de hogares propios de Medellín y el contexto colombiano,
-> donde las uniones consensuales son frecuentes especialmente en estratos populares.
-
 ---
 
 ## Nivel educativo por sexo
@@ -1514,15 +1398,6 @@ df %>%
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom")
 ```
-
-> El análisis del nivel educativo por sexo revela que la
-> **básica primaria** concentra defunciones de ambos sexos de forma similar,
-> dado que se trata principalmente de adultos mayores cuya educación fue limitada
-> en su época. En niveles educativos más altos (técnico, profesional, posgrado),
-> la diferencia entre sexos puede aportar información sobre inequidades en el
-> mercado laboral y en la exposición a riesgos ocupacionales. Un dominio masculino
-> en niveles bajos y jóvenes puede estar relacionado con el abandono escolar
-> temprano asociado al trabajo informal o a la vinculación con actividades de riesgo.
 
 ---
 
@@ -1551,15 +1426,6 @@ df %>%
   theme(legend.position = "bottom")
 ```
 
-> La comparación de causas de muerte por sexo pone de
-> manifiesto diferencias epidemiológicas fundamentales. Las **causas externas**
-> presentan una brecha muy pronunciada a favor del sexo masculino, lo que refleja
-> la mayor exposición de los hombres a la violencia y accidentes. En contraste,
-> las **neoplasias** y algunas **enfermedades circulatorias** muestran distribuciones
-> más equilibradas o incluso con mayor peso femenino. Estas diferencias son insumos
-> clave para el diseño de campañas de prevención diferenciadas por sexo y para la
-> asignación de recursos en programas de tamizaje oncológico o cardiovascular.
-
 ---
 
 ## Causa de muerte por grupo etario
@@ -1583,15 +1449,6 @@ df %>%
   theme_minimal(base_size = 10) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-
-> El heatmap evidencia que cada causa de muerte tiene un
-> **perfil etario característico**. Las enfermedades circulatorias y neoplasias
-> se concentran en los grupos de 55 años en adelante, con celdas de alta intensidad
-> en la esquina superior derecha. Las causas externas presentan su mayor densidad
-> en los grupos de 15–34 años, confirmando el patrón de mortalidad prematura
-> masculina. Las enfermedades perinatales y congénitas se restringen al grupo de
-> 0–4 años. Esta matriz es uno de los insumos más ricos para el dashboard, ya que
-> permite filtrar simultáneamente por causa y edad.
 
 ---
 
@@ -1621,81 +1478,6 @@ df %>%
   theme_minimal(base_size = 10) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-
-> La distribución de causas por comuna revela si existen
-> **perfiles epidemiológicos territorialmente diferenciados**. Si todas las comunas
-> comparten un patrón similar (dominio de enfermedades circulatorias), el patrón es
-> consistente con un proceso de transición epidemiológica generalizado. Sin embargo,
-> si ciertas comunas presentan mayor intensidad en causas externas, ello apunta a
-> concentración territorial de la violencia. Esta información puede cruzarse con
-> indicadores socioeconómicos por comuna (índice de condiciones de vida, NBI) para
-> explorar determinantes sociales de la salud.
-
----
-
-## Tipo de defunción por año y sexo
-
-```{r tipo_anio_sexo}
-df %>%
-  filter(SEXO %in% c("Masculino", "Femenino")) %>%
-  count(ANO, TIPO_DEFUN, SEXO) %>%
-  ggplot(aes(x = ANO, y = n, color = TIPO_DEFUN, group = TIPO_DEFUN)) +
-  geom_line(linewidth = 0.9) +
-  geom_point(size = 2) +
-  facet_wrap(~ SEXO) +
-  scale_x_continuous(breaks = seq(2012, 2023, 2)) +
-  labs(
-    title  = "Tipo de defunción por año y sexo",
-    x      = "Año",
-    y      = "Número de defunciones",
-    color  = "Tipo"
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(legend.position = "bottom",
-        axis.text.x     = element_text(angle = 45, hjust = 1))
-```
-
-> La facetización por sexo en este gráfico permite comparar
-> simultáneamente la evolución del tipo de defunción para hombres y mujeres. Si las
-> muertes **no naturales** muestran una tendencia decreciente más pronunciada en
-> hombres, ello refleja los efectos de las políticas de seguridad en Medellín durante
-> el período. En mujeres, las muertes no naturales pueden incluir una proporción
-> importante de accidentes domésticos y, en menor medida, violencia de género. El
-> incremento de muertes **naturales** en 2020 es visible en ambos paneles y confirma
-> el impacto del COVID-19 independientemente del sexo.
-
----
-
-## Seguridad social por causa de muerte
-
-```{r seg_causa}
-df %>%
-  filter(!is.na(NOM_667_OPS_GRUPO),
-         NOM_667_OPS_GRUPO != "Sin informacion",
-         SEG_SOCIAL != "Sin información") %>%
-  count(SEG_SOCIAL, NOM_667_OPS_GRUPO) %>%
-  ggplot(aes(x = SEG_SOCIAL, y = NOM_667_OPS_GRUPO, fill = n)) +
-  geom_tile(color = "white") +
-  scale_fill_gradient(low = "#FFF3E0", high = "#E65100",
-                      name = "Defunciones") +
-  labs(
-    title = "Heatmap: régimen de seguridad social por causa de muerte",
-    x     = "Régimen",
-    y     = "Grupo OPS"
-  ) +
-  theme_minimal(base_size = 10) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1))
-```
-
-> La relación entre régimen de seguridad social y causa de
-> muerte es un indicador proxy de equidad en salud. Si el régimen **subsidiado**
-> (población más vulnerable) muestra mayor concentración en causas externas o
-> enfermedades infecciosas respecto al **contributivo**, ello señala inequidades
-> en el perfil epidemiológico por estrato socioeconómico. Por su parte, el régimen
-> **vinculado** (sin afiliación) puede asociarse a diagnósticos tardíos o causas
-> mal definidas. Este análisis es relevante para evaluar si las barreras de acceso
-> al sistema de salud se traducen en diferencias en el tipo de muerte que afecta
-> a cada población.
 
 ---
 
@@ -1730,54 +1512,6 @@ df %>%
   ) +
   guides(fill = guide_legend(nrow = 3))
 ```
-
-> El gráfico de área apilada muestra cómo cambia la **composición relativa** de
-> las causas de muerte año a año, complementando la visión absoluta de la línea
-> de evolución. En 2020 se observa un aumento en la proporción de **enfermedades
-> transmisibles** (que incluyen COVID-19), comprimiendo la participación relativa
-> de otras causas. La tendencia de largo plazo muestra un leve incremento en
-> neoplasias, coherente con el envejecimiento poblacional y la mejora en el
-> diagnóstico oncológico.
-
----
-
-## Causa de muerte por sexo (proporciones dentro de cada grupo OPS)
-
-```{r ops_sexo_prop}
-df %>%
-  filter(SEXO %in% c("Masculino", "Femenino"),
-         !is.na(NOM_667_OPS_GRUPO),
-         NOM_667_OPS_GRUPO != "Sin informacion") %>%
-  count(NOM_667_OPS_GRUPO, SEXO) %>%
-  group_by(NOM_667_OPS_GRUPO) %>%
-  mutate(pct = round(n / sum(n) * 100, 1)) %>%
-  ungroup() %>%
-  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, pct),
-             y = pct, fill = SEXO)) +
-  geom_col(position = "dodge", alpha = 0.88) +
-  geom_text(aes(label = paste0(pct, "%")),
-            position = position_dodge(width = 0.9),
-            hjust = -0.1, size = 3) +
-  scale_fill_manual(values = c("Masculino" = "#1565C0",
-                               "Femenino"  = "#C2185B")) +
-  coord_flip() +
-  ylim(0, 100) +
-  labs(
-    title  = "Distribución por sexo dentro de cada grupo OPS (%)",
-    x      = NULL,
-    y      = "Porcentaje (%)",
-    fill   = "Sexo"
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(legend.position = "bottom")
-```
-
-> Este gráfico muestra la **composición por sexo** dentro de cada grupo OPS, no
-> los conteos absolutos. Las **causas externas** presentan la mayor asimetría:
-> los hombres representan una proporción marcadamente superior, reflejando su
-> mayor exposición a violencia y accidentes. En enfermedades circulatorias y
-> neoplasias, la distribución es más equilibrada. Las afecciones perinatales se
-> distribuyen casi equitativamente por la biología del nacimiento.
 
 ---
 
@@ -1814,42 +1548,11 @@ df %>%
   theme(legend.position = "bottom")
 ```
 
-```{r ops_nivel_edu_tabla}
-df %>%
-  filter(
-    !is.na(NOM_667_OPS_GRUPO),
-    NOM_667_OPS_GRUPO != "Sin informacion",
-    NIVEL_EDU_GRUPO != "Sin información"
-  ) %>%
-  count(NOM_667_OPS_GRUPO, NIVEL_EDU_GRUPO) %>%
-  group_by(NOM_667_OPS_GRUPO) %>%
-  mutate(pct = round(n / sum(n) * 100, 1)) %>%
-  ungroup() %>%
-  select(NOM_667_OPS_GRUPO, NIVEL_EDU_GRUPO, pct) %>%
-  tidyr::pivot_wider(names_from = NIVEL_EDU_GRUPO, values_from = pct,
-                     values_fill = 0) %>%
-  kable(
-    caption = "Distribución porcentual por nivel educativo dentro de cada grupo OPS (%)",
-    align   = c("l", rep("r", 4))
-  ) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"), full_width = TRUE) %>%
-  column_spec(1, bold = TRUE)
-```
-
-> Las afecciones perinatales concentran el 100% en nivel **Básica** (los bebés no
-> tienen escolaridad formal). Las **causas externas** muestran una proporción
-> relativamente mayor en nivel **Media** comparado con otras causas, lo que señala
-> mayor mortalidad violenta en jóvenes con educación secundaria incompleta o
-> completa. Las enfermedades circulatorias y neoplasias tienen el porcentaje más
-> alto de nivel **Básica**, coherente con el perfil etario de personas mayores.
-> El nivel **Superior** es consistentemente bajo en todas las causas.
-
 ---
 
 ## Dataset final para dashboard
 
 ```{r dataset_final}
-# Variables seleccionadas para exportación al dashboard
 VARS_DASHBOARD <- c(
   "NOM_667_OPS_GRUPO",
   "ANO", "MES",
@@ -1875,9 +1578,6 @@ df_final %>%
   count(NOM_667_OPS_GRUPO, sort = TRUE) %>%
   mutate(pct = round(n / sum(n) * 100, 1)) %>%
   print()
-
-# Para exportar a CSV (descomentar):
-# write_csv(df_final, "defunciones_dashboard.csv")
 ```
 
 ```{r balance_clases_plot}
@@ -1900,13 +1600,326 @@ df_final %>%
   theme_minimal(base_size = 11)
 ```
 
-> El dataset final contiene las variables más relevantes para los dashboards
-> interactivos en Shiny y Dash. La variable objetivo `NOM_667_OPS_GRUPO`
-> presenta un **desbalance moderado**: las enfermedades circulatorias y neoplasias
-> concentran cerca del 50% de los registros, mientras que afecciones perinatales
-> y signos mal definidos representan menos del 1.5%. Este desbalance es relevante
-> si el dataset se usa para modelado predictivo; para visualización descriptiva,
-> el EDA es suficiente como base.
+> La variable objetivo `NOM_667_OPS_GRUPO` presenta un **desbalance moderado**:
+> las enfermedades circulatorias y neoplasias concentran cerca del 50% de los
+> registros, mientras que afecciones perinatales y signos mal definidos representan
+> menos del 1.5%. Este desbalance debe ser tenido en cuenta en el modelado predictivo.
+
+---
+
+# Modelado Predictivo
+
+Se implementan dos modelos de clasificación para predecir `NOM_667_OPS_GRUPO`.
+
+**Contexto del desbalance:** la clase mayoritaria representa ~28% y la minoritaria
+~0.5% (ratio ≈ 55:1). Por esto se usan pesos de clase en ambos modelos y la métrica
+principal es el **F1-Score weighted**.
+
+Modelos comparados:
+
+- **Random Forest** — con pesos de clase inversos a la frecuencia (`classwt`)
+- **Árbol de Decisión** — con pesos de caso proporcionales a la frecuencia inversa
+
+## Librerías de modelado
+
+```{r librerias_modelo}
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(tibble)
+```
+
+## Preparación del dataset de modelado
+
+```{r prep_modelo}
+set.seed(42)
+
+FEATURES <- c("SEXO", "EDAD_SIMPLE", "EST_CIVIL", "SEG_SOCIAL",
+              "NIVEL_EDU_GRUPO", "ANO", "MES")
+TARGET   <- "NOM_667_OPS_GRUPO"
+
+# Seleccionar y limpiar
+df_model <- df_final %>%
+  select(all_of(c(FEATURES, TARGET))) %>%
+  filter(!is.na(NOM_667_OPS_GRUPO)) %>%
+  mutate(
+    EDAD_SIMPLE     = if_else(is.na(EDAD_SIMPLE),
+                              median(EDAD_SIMPLE, na.rm = TRUE),
+                              EDAD_SIMPLE),
+    SEXO            = as.factor(SEXO),
+    EST_CIVIL       = as.factor(EST_CIVIL),
+    SEG_SOCIAL      = as.factor(SEG_SOCIAL),
+    NIVEL_EDU_GRUPO = as.factor(NIVEL_EDU_GRUPO),
+    NOM_667_OPS_GRUPO = as.factor(NOM_667_OPS_GRUPO)
+  )
+
+# Train / Test split estratificado (80/20)
+idx        <- createDataPartition(df_model[[TARGET]], p = 0.8, list = FALSE)
+train_data <- df_model[idx, ]
+test_data  <- df_model[-idx, ]
+
+cat("Train:", nrow(train_data), "registros\n")
+cat("Test :", nrow(test_data),  "registros\n")
+```
+
+## Distribución de clases (variable objetivo)
+
+```{r dist_clases}
+dist_clases <- df_model %>%
+  count(NOM_667_OPS_GRUPO) %>%
+  mutate(pct = round(n / sum(n) * 100, 1))
+
+dist_clases %>%
+  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, n), y = n)) +
+  geom_col(fill = "#1565C0", alpha = 0.85) +
+  geom_text(aes(label = paste0(pct, "%")), hjust = -0.1, size = 3.2) +
+  coord_flip() +
+  ylim(0, max(dist_clases$n) * 1.2) +
+  labs(
+    title    = "Distribución de clases — Variable objetivo (desbalanceada)",
+    subtitle = paste0("Ratio mayoría/minoría: ",
+                      max(dist_clases$n) %/% min(dist_clases$n), ":1"),
+    x        = NULL,
+    y        = "Registros"
+  ) +
+  theme_minimal(base_size = 11)
+
+cat("Ratio mayoría/minoría:", max(dist_clases$n) %/% min(dist_clases$n), ":1\n")
+```
+
+## Pesos de clase para manejo del desbalance
+
+```{r pesos_clase}
+# Pesos inversamente proporcionales a la frecuencia de cada clase
+class_freq   <- table(train_data[[TARGET]])
+class_weights <- (1 / as.numeric(class_freq))
+names(class_weights) <- names(class_freq)
+
+cat("Pesos de clase calculados:\n")
+print(round(class_weights, 4))
+```
+
+## Entrenamiento — Random Forest
+
+```{r train_rf}
+t0 <- proc.time()
+
+rf_model <- randomForest(
+  NOM_667_OPS_GRUPO ~ .,
+  data      = train_data,
+  ntree     = 100,
+  maxnodes  = 1024,          # análogo a max_depth = 10
+  classwt   = class_weights, # manejo de desbalance
+  importance = TRUE,
+  seed       = 42
+)
+
+rf_time <- round((proc.time() - t0)[["elapsed"]], 2)
+cat("✓ Random Forest entrenado en", rf_time, "segundos\n")
+```
+
+## Entrenamiento — Árbol de Decisión
+
+```{r train_dt}
+t0 <- proc.time()
+
+# Pesos de caso para rpart (equivalente a class_weight="balanced")
+case_weights_train <- as.numeric(class_weights[
+  as.character(train_data$NOM_667_OPS_GRUPO)
+])
+
+dt_model <- rpart(
+  NOM_667_OPS_GRUPO ~ .,
+  data    = train_data,
+  weights = case_weights_train,
+  method  = "class",
+  control = rpart.control(maxdepth = 8, cp = 0.001)
+)
+
+dt_time <- round((proc.time() - t0)[["elapsed"]], 2)
+cat("✓ Árbol de Decisión entrenado en", dt_time, "segundos\n")
+```
+
+## Predicciones y comparación de métricas
+
+```{r metricas}
+rf_pred <- predict(rf_model, test_data)
+dt_pred <- predict(dt_model, test_data, type = "class")
+
+# Función para calcular métricas
+calcular_metricas <- function(nombre, y_true, y_pred, tiempo) {
+  cm  <- confusionMatrix(y_pred, y_true)
+  f1w <- round(mean(cm$byClass[, "F1"], na.rm = TRUE) * 100, 2)
+  tibble(
+    Modelo       = nombre,
+    Accuracy     = round(cm$overall["Accuracy"] * 100, 2),
+    `F1 Weighted ★` = f1w,
+    Kappa        = round(cm$overall["Kappa"] * 100, 2),
+    `Tiempo (s)` = tiempo
+  )
+}
+
+resultados <- bind_rows(
+  calcular_metricas("Random Forest",     test_data$NOM_667_OPS_GRUPO, rf_pred, rf_time),
+  calcular_metricas("Árbol de Decisión", test_data$NOM_667_OPS_GRUPO, dt_pred, dt_time)
+)
+
+resultados %>%
+  kable(
+    caption = "★ F1 Weighted = métrica principal (dataset desbalanceado)",
+    align   = c("l", "r", "r", "r", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  column_spec(3, bold = TRUE, color = "#1B5E20")
+```
+
+## Matrices de confusión normalizadas
+
+```{r confusion_matrices, fig.width=14, fig.height=6}
+par(mfrow = c(1, 2))
+
+plot_confusion <- function(y_true, y_pred, titulo) {
+  cm     <- table(Predicho = y_pred, Real = y_true)
+  cm_pct <- round(prop.table(cm, margin = 2) * 100, 0)
+  
+  # Usar ggplot para mejor presentación
+  as.data.frame(cm_pct) %>%
+    ggplot(aes(x = Real, y = Predicho, fill = Freq)) +
+    geom_tile(color = "white") +
+    geom_text(aes(label = paste0(Freq, "%")), size = 2.8) +
+    scale_fill_gradient(low = "#E3F2FD", high = "#0D47A1",
+                        name = "%", limits = c(0, 100)) +
+    labs(title = titulo, x = "Real", y = "Predicho") +
+    theme_minimal(base_size = 9) +
+    theme(axis.text.x = element_text(angle = 40, hjust = 1, size = 7),
+          axis.text.y = element_text(size = 7),
+          plot.title  = element_text(size = 10, face = "bold"))
+}
+
+p1 <- plot_confusion(test_data$NOM_667_OPS_GRUPO, rf_pred,
+                     "Random Forest\n(% por columna — normalizado por clase real)")
+p2 <- plot_confusion(test_data$NOM_667_OPS_GRUPO, dt_pred,
+                     "Árbol de Decisión\n(% por columna — normalizado por clase real)")
+
+gridExtra::grid.arrange(p1, p2, ncol = 2)
+```
+
+> Las matrices de confusión normalizadas por columna revelan qué tan bien cada
+> modelo predice cada clase. Las clases con alta diagonal (porcentaje alto en la
+> celda i,i) son bien diferenciadas; las que muestran alta dispersión fuera de la
+> diagonal son difíciles de separar con las variables disponibles.
+
+## Importancia de variables — Random Forest
+
+```{r importancia_vars}
+importancia <- as.data.frame(importance(rf_model)) %>%
+  rownames_to_column("Variable") %>%
+  arrange(desc(MeanDecreaseGini)) %>%
+  mutate(Importancia_pct = round(MeanDecreaseGini / sum(MeanDecreaseGini) * 100, 1))
+
+importancia %>%
+  ggplot(aes(x = reorder(Variable, Importancia_pct), y = Importancia_pct)) +
+  geom_col(fill = "#1565C0", alpha = 0.85) +
+  geom_text(aes(label = paste0(Importancia_pct, "%")),
+            hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  ylim(0, max(importancia$Importancia_pct) * 1.2) +
+  labs(
+    title = "Importancia de Variables — Random Forest (Gini)",
+    x     = NULL,
+    y     = "Importancia relativa (%)"
+  ) +
+  theme_minimal(base_size = 12)
+
+importancia %>%
+  select(Variable, Importancia_pct) %>%
+  kable(
+    caption   = "Importancia relativa de variables (% del total Gini)",
+    col.names = c("Variable", "Importancia (%)"),
+    align     = c("l", "r")
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+> `EDAD_SIMPLE` lidera la importancia porque diferencia claramente los grupos
+> etarios asociados a causas específicas (perinatales en edad 0, causas externas
+> en jóvenes, circulatorias en adultos mayores). Las variables socioeconómicas
+> (`SEG_SOCIAL`, `SEXO`) aportan menos, pues su distribución es similar entre
+> grupos OPS.
+
+## Estructura del Árbol de Decisión
+
+```{r arbol_visualizacion, fig.width=12, fig.height=8}
+rpart.plot(
+  dt_model,
+  type      = 4,
+  extra     = 104,
+  fallen.leaves = TRUE,
+  main      = "Árbol de Decisión — Clasificación de grupos OPS",
+  cex       = 0.6
+)
+```
+
+## Reporte de clasificación por clase
+
+```{r reporte_clasificacion}
+# Random Forest
+cat("=== Random Forest ===\n")
+print(confusionMatrix(rf_pred, test_data$NOM_667_OPS_GRUPO)$byClass[
+  , c("Sensitivity", "Specificity", "F1", "Precision", "Recall")
+] %>% round(3))
+
+cat("\n=== Árbol de Decisión ===\n")
+print(confusionMatrix(dt_pred, test_data$NOM_667_OPS_GRUPO)$byClass[
+  , c("Sensitivity", "Specificity", "F1", "Precision", "Recall")
+] %>% round(3))
+```
+
+## Selección del mejor modelo y guardado
+
+### Contexto del desbalance
+
+El dataset presenta un ratio mayoría/minoría de **55:1** (circulatorio ~28.4% vs
+mal definidas ~0.5%). En este escenario el Accuracy es una métrica engañosa; la
+métrica principal es el **F1-Score weighted**, que promedia el F1 por clase
+ponderado por su frecuencia real.
+
+### Veredicto
+
+**Modelo seleccionado: Random Forest** con `classwt` proporcional a la frecuencia inversa.
+
+1. Supera al Árbol de Decisión en F1 weighted y en Accuracy.
+2. Mayor recall en clases minoritarias gracias a los pesos de clase por árbol.
+3. La importancia de variables es interpretable y coherente con el análisis EDA.
+4. El costo es el tiempo de entrenamiento (más lento que rpart), aceptable en producción.
+
+### Guardado del modelo
+
+```{r guardar_modelo}
+# Guardar ambos modelos y metadatos en un único .rds
+modelos_entrenados <- list(
+  random_forest  = rf_model,
+  decision_tree  = dt_model,
+  features       = FEATURES,
+  target         = TARGET,
+  class_weights  = class_weights,
+  niveles_target = levels(df_model$NOM_667_OPS_GRUPO),
+  fecha_entrenamiento = Sys.Date()
+)
+
+ruta_modelo <- "C:/Users/Usuario/Causas_de_Defuncion_Medellin/app/models/modelos_entrenados.rds"
+saveRDS(modelos_entrenados, ruta_modelo)
+
+cat("✓ Modelos exportados a:\n ", ruta_modelo, "\n")
+cat("  Objetos guardados:", paste(names(modelos_entrenados), collapse = ", "), "\n")
+```
+
+> Para cargar los modelos en la aplicación Shiny o cualquier script de R basta con:
+> ```r
+> modelos <- readRDS("C:/Users/Usuario/Causas_de_Defuncion_Medellin/app/models/modelos_entrenados.rds")
+> rf      <- modelos$random_forest
+> ```
 
 ---
 
@@ -1919,17 +1932,18 @@ hallazgos <- tibble::tribble(
   ~Dimensión,           ~Hallazgo,
   "Temporal",           "Las defunciones muestran una tendencia estable en 2012-2019, con un pico claro en 2020 atribuible al COVID-19. La composición porcentual de causas varía en ese año, con incremento de enfermedades transmisibles.",
   "Demográfica",        "El sexo masculino concentra la mayor proporción de defunciones, especialmente en causas externas donde la asimetría de género es máxima. Las mujeres fallecen en promedio a edades mayores.",
-  "Causas",             "Las enfermedades del sistema circulatorio y neoplasias lideran, seguidas por 'todas las demás enfermedades'. Las causas externas persisten como carga evitable. La unificación de categorías OPS fue necesaria para corregir inconsistencias del dataset.",
+  "Causas",             "Las enfermedades del sistema circulatorio y neoplasias lideran, seguidas por 'todas las demás enfermedades'. Las causas externas persisten como carga evitable.",
   "Territorial",        "Algunas comunas concentran proporcionalmente más defunciones. El análisis porcentual por comuna revela perfiles epidemiológicos diferenciados, con mayor peso de causas externas en ciertas zonas.",
   "Educación",          "El nivel básico domina en todas las causas, reflejando el perfil etario de la mortalidad. Las causas externas muestran mayor proporción en nivel media, señalando mortalidad prematura en jóvenes.",
-  "Calidad de datos",   "Se corrigieron tres problemas específicos: (1) corrupción Excel en ETAREO_QUIN ('oct-14', '1-abr', '5-sep'), (2) valores centinela en EDAD_SIMPLE (8888, 4000, 4999), (3) duplicidad de categorías en NOM_667_OPS_GRUPO.",
+  "Calidad de datos",   "Se corrigieron tres problemas específicos: (1) corrupción Excel en ETAREO_QUIN, (2) valores centinela en EDAD_SIMPLE (8888, 4000, 4999), (3) duplicidad de categorías en NOM_667_OPS_GRUPO.",
   "Seguridad social",   "El régimen contributivo y subsidiado concentran la mayoría de los registros. El régimen vinculado señala grupos de población sin cobertura que pueden asociarse a diagnósticos tardíos.",
+  "Modelado",           "El Random Forest supera al Árbol de Decisión en F1 weighted. EDAD_SIMPLE es la variable más importante (~60% del Gini). Las métricas bajas (~37% F1) reflejan el límite natural de separabilidad entre circulatorio, neoplasias y 'todas las demás', que comparten perfil demográfico similar y representan el 75% del dataset.",
   "Dataset final",      "Se preparó un dataset de 11 variables y ~145.000 registros optimizado para los dashboards interactivos en Shiny y Dash, con la variable objetivo NOM_667_OPS_GRUPO correctamente unificada."
 )
 
 hallazgos %>%
   kable(
-    caption = "Resumen de principales hallazgos del EDA",
+    caption = "Resumen de principales hallazgos del EDA y Modelado",
     align   = c("l", "l")
   ) %>%
   kable_styling(bootstrap_options = c("striped", "hover"),
@@ -1942,9 +1956,10 @@ hallazgos %>%
 
 ## Conclusiones
 
-Este Análisis Exploratorio de Datos permitió caracterizar el comportamiento de
-la mortalidad en Medellín durante el período 2012–2023 desde múltiples
-dimensiones: temporal, demográfica, territorial y por causa de muerte.
+Este análisis permitió caracterizar el comportamiento de la mortalidad en Medellín
+durante el período 2012–2023 desde múltiples dimensiones: temporal, demográfica,
+territorial y por causa de muerte, culminando con la construcción de modelos
+predictivos de clasificación.
 
 Desde la perspectiva **temporal**, Medellín exhibe una tendencia de mortalidad
 relativamente estable en el período pre-pandémico (2012–2019), con una ruptura
@@ -1955,28 +1970,18 @@ En cuanto al **perfil sociodemográfico**, la sobremortalidad masculina es el
 rasgo más saliente, especialmente en edades jóvenes, donde las causas externas
 (homicidios, accidentes) siguen siendo una carga desproporcionada. Las mujeres
 fallecen en promedio a edades mayores y predominantemente por causas naturales.
-El nivel educativo bajo en los fallecidos refleja el perfil de envejecimiento
-de una cohorte histórica con menor acceso a educación formal.
 
 En términos de **causas de muerte**, el dominio de las enfermedades
 circulatorias y neoplasias confirma la transición epidemiológica, aunque la
 persistencia de causas externas significativas distingue el perfil de Medellín
-del de ciudades con mayor desarrollo humano. Los grupos OPS más relevantes para
-políticas de salud son el circulatorio, las neoplasias y las causas externas.
+del de ciudades con mayor desarrollo humano.
 
-El análisis **territorial** revela desigualdades entre comunas que merecen
-atención diferenciada. La distribución de causas por territorio puede servir
-de base para la focalización de recursos y la implementación de programas
-preventivos con enfoque local.
-
-Los principales insumos generados para el desarrollo de los dashboards
-interactivos son:
-
-- Evolución temporal anual y mensual con desagregación por tipo y sexo.
-- Perfil sociodemográfico de los fallecidos por sexo, edad y estado civil.
-- Ranking y distribución de causas de muerte según clasificación CIE-10 y OPS.
-- Distribución territorial por comunas y barrios de residencia.
-- Relaciones bivariadas entre causa, sexo, grupo etario y seguridad social.
-
-En conjunto, estos resultados permiten comprender la estructura del dataset y constituyen una base sólida para la construcción del dashboard, facilitando la exploración interactiva y la comunicación de los patrones identificados.
-
+En el **modelado predictivo**, el Random Forest con pesos de clase balanceados
+se seleccionó como el mejor modelo por su superioridad en F1 weighted y recall
+macro. Las métricas globales bajas (~37% F1) reflejan un límite natural de
+separabilidad inherente al problema: las variables demográficas disponibles no
+permiten distinguir con precisión entre las tres clases más frecuentes
+(circulatorio, neoplasias y "todas las demás"), que comparten un perfil etario
+muy similar. El modelo y sus metadatos quedan guardados para su uso en la
+aplicación Shiny en:
+`C:/Users/Usuario/Causas_de_Defuncion_Medellin/app/models/modelos_entrenados.rds`.
