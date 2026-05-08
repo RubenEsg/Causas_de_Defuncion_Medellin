@@ -1002,6 +1002,26 @@ input[type='number']:focus {
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+/* ── FIX: DT DataTables dentro de .box ───────────────────────── */
+/* El CSS global pone overflow:visible en .box, lo que rompe scrollX del DT */
+.box .dataTables_wrapper {
+  overflow-x: auto !important;
+}
+.box .dataTables_scroll,
+.box .dataTables_scrollBody {
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+}
+/* Asegura que el contenedor del DT no desborde el card */
+.box .dataTables_wrapper .dataTables_scrollHead,
+.box .dataTables_wrapper .dataTables_scrollBody {
+  width: 100% !important;
+}
+/* Altura mínima para que el gráfico de importancia sea visible */
+.met-importancia-wrap {
+  min-height: 360px;
+}
+
 /* Loading spinner */
 .shiny-spinner-output-container > .load-container { background: transparent !important; }
 "
@@ -1104,12 +1124,7 @@ ui <- dashboardPage(
                menuSubItem("Configuración",       tabName = "tr_sel"),
                menuSubItem("Métricas de modelos", tabName = "tr_met_rf")
       ),
-      menuItem("Predicción",    tabName = "pred",   icon = icon("magic"),
-        menuSubItem("Formulario",   tabName = "pr_form"),
-        menuSubItem("Resultado",    tabName = "pr_res"),
-        menuSubItem("Probabilidad", tabName = "pr_prob")
-      ),
-      menuItem("Métricas de los modelos",   tabName = "met_full",   icon = icon("chart-line")),
+      menuItem("Métricas mejor modelo",   tabName = "met_full",   icon = icon("chart-line")),
       menuItem("Predicción · Mejor Modelo", tabName = "pred_mejor", icon = icon("robot"))
     ),
     tags$div(style = "position:absolute; bottom:0; left:0; right:0; padding:16px; border-top:1px solid rgba(255,255,255,.05);",
@@ -1712,10 +1727,12 @@ ui <- dashboardPage(
             tags$br(),
 
             fluidRow(
-              valueBoxOutput("vb_acc_rf",  width = 3),
-              valueBoxOutput("vb_kap_rf",  width = 3),
-              valueBoxOutput("vb_prec_rf", width = 3),
-              valueBoxOutput("vb_rec_rf",  width = 3)
+              valueBoxOutput("vb_acc_rf",   width = 2),
+              valueBoxOutput("vb_kap_rf",   width = 2),
+              valueBoxOutput("vb_prec_rf",  width = 2),
+              valueBoxOutput("vb_rec_rf",   width = 2),
+              valueBoxOutput("vb_f1_rf",    width = 2),
+              valueBoxOutput("vb_bacc_rf",  width = 2)
             ),
 
             fluidRow(
@@ -1724,8 +1741,8 @@ ui <- dashboardPage(
                 plotlyOutput("plot_confmat_rf", height = 420)
               ),
               box(width = 6, solidHeader = TRUE, status = "success",
-                title = tags$span(icon("star"), " Importancia de variables"),
-                plotlyOutput("plot_importancia", height = 320)
+                title = tags$span(icon("star"), " Importancia de variables — RF"),
+                plotlyOutput("plot_importancia_met", height = 380)
               )
             ),
 
@@ -1748,16 +1765,22 @@ ui <- dashboardPage(
             tags$br(),
 
             fluidRow(
-              valueBoxOutput("vb_acc_rpart",  width = 3),
-              valueBoxOutput("vb_kap_rpart",  width = 3),
-              valueBoxOutput("vb_prec_rpart", width = 3),
-              valueBoxOutput("vb_rec_rpart",  width = 3)
+              valueBoxOutput("vb_acc_rpart",   width = 2),
+              valueBoxOutput("vb_kap_rpart",   width = 2),
+              valueBoxOutput("vb_prec_rpart",  width = 2),
+              valueBoxOutput("vb_rec_rpart",   width = 2),
+              valueBoxOutput("vb_f1_rpart",    width = 2),
+              valueBoxOutput("vb_bacc_rpart",  width = 2)
             ),
 
             fluidRow(
-              box(width = 12, solidHeader = TRUE, status = "warning",
+              box(width = 6, solidHeader = TRUE, status = "warning",
                 title = tags$span(icon("th"), " Matriz de confusión — Árbol"),
                 plotlyOutput("plot_confmat_rpart", height = 420)
+              ),
+              box(width = 6, solidHeader = TRUE, status = "success",
+                title = tags$span(icon("star"), " Importancia de variables — Árbol"),
+                plotlyOutput("plot_importancia_rpart", height = 380)
               )
             ),
 
@@ -1771,110 +1794,9 @@ ui <- dashboardPage(
         )
       ),
 
-      # ══════════════════════════════════════════════════════
-      # PREDICCIÓN: FORMULARIO
-      # ══════════════════════════════════════════════════════
-      tabItem("pr_form",
-        fluidRow(
-          column(7,
-            box(
-              width = 12, solidHeader = TRUE, status = "primary",
-              title = tags$span(icon("user"), " Datos del caso"),
-              fluidRow(
-                column(6,
-                  selectInput("p_sexo", "Sexo:", choices = c("Masculino" = "1", "Femenino" = "2")),
-                  numericInput("p_edad", "Edad (años):", 45, 0, 120),
-                  selectInput("p_etareo", "Grupo etáreo:",
-                    choices = c("0-4","5-9","10-14","15-19","20-24","25-29",
-                                "30-34","35-39","40-44","45-49","50-54","55-59",
-                                "60-64","65-69","70-74","75-79","80+"),
-                    selected = "45-49")
-                ),
-                column(6,
-                  selectInput("p_civil", "Estado civil:",
-                    choices = c("Soltero(a)" = 1, "Casado(a)" = 2, "Viudo(a)" = 3,
-                                "Separado(a)" = 4, "Unión libre" = 5, "Sin info" = 9)),
-                  selectInput("p_edu", "Nivel educativo:",
-                    choices = c("Sin escolaridad" = 0, "Primaria" = 1, "Secundaria" = 2,
-                                "Técnico" = 3, "Universitario" = 4, "Sin info" = 99)),
-                  selectInput("p_seg", "Seg. social:",
-                    choices = c("Contributivo" = 1, "Subsidiado" = 2, "Vinculado" = 3,
-                                "Especial" = 4, "Sin info" = 9))
-                )
-              ),
-              tags$hr(),
-              fluidRow(
-                column(6, numericInput("p_ano", "Año del registro:", 2023, 2000, 2030)),
-                column(6,
-                  selectInput("p_mes", "Mes:",
-                    choices = setNames(1:12, c("Enero","Febrero","Marzo","Abril","Mayo","Junio",
-                                               "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre")))
-                )
-              ),
-              tags$br(),
-              actionButton("btn_predecir", "Predecir causa de muerte",
-                icon = icon("magic"), class = "btn-primary btn-block")
-            )
-          ),
-          column(5,
-            box(
-              width = 12, solidHeader = TRUE, status = "info",
-              title = tags$span(icon("info-circle"), " Instrucciones"),
-              tags$div(style = "display:flex; flex-direction:column; gap:10px; margin-bottom:16px;",
-                tags$div(style = "display:flex; align-items:flex-start; gap:10px; padding:12px; background:var(--p-light); border-radius:var(--r-sm);",
-                  tags$span(style = "background:var(--p); color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; margin-top:1px;", "1"),
-                  tags$span(style = "font-size:13px; color:var(--txt2);",
-                    "Asegúrese de haber entrenado el modelo en la sección ", tags$strong("Modelado."))
-                ),
-                tags$div(style = "display:flex; align-items:flex-start; gap:10px; padding:12px; background:#f0fdf4; border-radius:var(--r-sm);",
-                  tags$span(style = "background:var(--green); color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; margin-top:1px;", "2"),
-                  tags$span(style = "font-size:13px; color:var(--txt2);",
-                    "Los resultados muestran el grupo de causa de muerte ", tags$strong("más probable."))
-                ),
-                tags$div(style = "display:flex; align-items:flex-start; gap:10px; padding:12px; background:#fffbeb; border-radius:var(--r-sm);",
-                  tags$span(style = "background:var(--amber); color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; margin-top:1px;", "3"),
-                  tags$span(style = "font-size:13px; color:var(--txt2);",
-                    "La visualización de probabilidades indica la ", tags$strong("certeza del modelo"),
-                    " para cada clase.")
-                )
-              ),
-              uiOutput("pred_alerta")
-            )
-          )
-        )
-      ),
 
       # ══════════════════════════════════════════════════════
-      # PREDICCIÓN: RESULTADO
-      # ══════════════════════════════════════════════════════
-      tabItem("pr_res",
-        fluidRow(
-          box(
-            width = 6, solidHeader = TRUE, status = "success",
-            title = tags$span(icon("check-circle"), " Resultado de la predicción"),
-            uiOutput("pred_resultado")
-          ),
-          box(
-            width = 6, solidHeader = TRUE, status = "info",
-            title = tags$span(icon("clipboard"), " Resumen del caso ingresado"),
-            tableOutput("pred_caso")
-          )
-        )
-      ),
-
-      # ══════════════════════════════════════════════════════
-      # PREDICCIÓN: PROBABILIDAD
-      # ══════════════════════════════════════════════════════
-      tabItem("pr_prob",
-        box(
-          width = 12, solidHeader = TRUE, status = "warning",
-          title = tags$span(icon("bar-chart"), " Probabilidad por grupo de causa"),
-          plotlyOutput("plot_prob", height = 420)
-        )
-      ),
-
-      # ══════════════════════════════════════════════════════
-      # MÉTRICAS DE LOS MODELOS (tab consolidada)
+      # MÉTRICAS MEJOR MODELO (tab consolidada)
       # ══════════════════════════════════════════════════════
       tabItem("met_full",
 
@@ -1900,7 +1822,10 @@ ui <- dashboardPage(
             box(
               width = 12, solidHeader = TRUE, status = "primary",
               title = tags$span(icon("table"), " Métricas por clase"),
-              DT::DTOutput("met_tabla_clase")
+              tags$div(
+                style = "overflow-x: auto; width: 100%;",
+                DT::DTOutput("met_tabla_clase")
+              )
             )
           ),
           column(6,
@@ -1917,7 +1842,9 @@ ui <- dashboardPage(
           box(
             width = 12, solidHeader = TRUE, status = "success",
             title = tags$span(icon("star"), " Importancia de variables"),
-            plotlyOutput("met_importancia", height = 340)
+            tags$div(class = "met-importancia-wrap",
+              plotlyOutput("met_importancia", height = 340)
+            )
           )
         )
       ),

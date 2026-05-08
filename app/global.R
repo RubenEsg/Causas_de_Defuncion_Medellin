@@ -17,6 +17,7 @@ library(caret)
 library(reshape2)
 library(scales)
 
+
 # ── Carga de datos ───────────────────────────────────────────
 URL_DATOS <- "https://raw.githubusercontent.com/RubenEsg/Causas_de_Defuncion_Medellin/main/data/defunciones.csv"
 

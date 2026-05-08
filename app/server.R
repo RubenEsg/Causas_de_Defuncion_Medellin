@@ -104,7 +104,7 @@ server <- function(input, output, session) {
       cm_rf          = cm_rf_rv(),
       cm_rpart       = cm_rpart_rv(),
       fecha_guardado = Sys.time()
-    ), file = file.path("models", "modelos_entrenados.rds"))
+    ), file = file.path("models", "modelos_entrenados.rds"), compress = "xz")
     showNotification("Modelos guardados en models/modelos_entrenados.rds",
                      type = "message", duration = 5)
   })
@@ -502,6 +502,17 @@ server <- function(input, output, session) {
     valueBox(percent(mean(cm$byClass[, "Recall"], na.rm = TRUE), 0.1), "Recall RF",
              icon("redo"), color = "red")
   })
+  output$vb_f1_rf <- renderValueBox({
+    cm <- cm_rf_rv(); req(cm)
+    prec <- cm$byClass[, "Precision"]; rec <- cm$byClass[, "Recall"]
+    f1   <- mean(2 * prec * rec / (prec + rec), na.rm = TRUE)
+    valueBox(percent(f1, 0.1), "F1-Score RF", icon("star"), color = "purple")
+  })
+  output$vb_bacc_rf <- renderValueBox({
+    cm <- cm_rf_rv(); req(cm)
+    bacc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    valueBox(percent(bacc, 0.1), "Balanced Acc. RF", icon("arrows-alt"), color = "teal")
+  })
   output$metricas_detalle_rf <- renderPrint({
     cm <- cm_rf_rv(); req(cm); print(cm)
   })
@@ -524,11 +535,39 @@ server <- function(input, output, session) {
   })
   output$vb_rec_rpart <- renderValueBox({
     cm <- cm_rpart_rv(); req(cm)
-    valueBox(percent(mean(cm$byClass[, "Recall"], na.rm = TRUE), 0.1), "Recall Arbol",
+    valueBox(percent(mean(cm$byClass[, "Recall"], na.rm = TRUE), 0.1), "Recall Árbol",
              icon("redo"), color = "red")
+  })
+  output$vb_f1_rpart <- renderValueBox({
+    cm <- cm_rpart_rv(); req(cm)
+    prec <- cm$byClass[, "Precision"]; rec <- cm$byClass[, "Recall"]
+    f1   <- mean(2 * prec * rec / (prec + rec), na.rm = TRUE)
+    valueBox(percent(f1, 0.1), "F1-Score Árbol", icon("star"), color = "purple")
+  })
+  output$vb_bacc_rpart <- renderValueBox({
+    cm <- cm_rpart_rv(); req(cm)
+    bacc <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+    valueBox(percent(bacc, 0.1), "Balanced Acc. Árbol", icon("arrows-alt"), color = "teal")
   })
   output$metricas_detalle_rpart <- renderPrint({
     cm <- cm_rpart_rv(); req(cm); print(cm)
+  })
+
+  # ── IMPORTANCIA DE VARIABLES ÁRBOL ────────────────────────
+  output$plot_importancia_rpart <- renderPlotly({
+    mod <- mod_rpart_rv(); req(mod)
+    imp <- varImp(mod)$importance
+    df  <- data.frame(Variable    = rownames(imp),
+                      Importancia = imp[, 1]) %>%
+      arrange(desc(Importancia)) %>%
+      head(15)
+    p <- ggplot(df, aes(x = reorder(Variable, Importancia),
+                        y = Importancia, fill = Importancia)) +
+      geom_col(show.legend = FALSE) + coord_flip() +
+      scale_fill_gradient(low = "#F9E4B7", high = "#E67E22") +
+      labs(x = NULL, y = "Importancia (Overall)") +
+      theme_minimal(base_size = 12)
+    ggplotly(p)
   })
 
   # ── MATRICES DE CONFUSIÓN ─────────────────────────────────
@@ -684,18 +723,84 @@ server <- function(input, output, session) {
 
   output$met_tabla_clase <- DT::renderDT({
     cm <- metricas_rv(); req(cm)
-    df <- as.data.frame(round(cm$byClass, 3))
-    df$Clase <- rownames(df)
-    df <- df %>% select(Clase, everything()) %>%
-      arrange(desc(Balanced.Accuracy))
-    DT::datatable(df, options = list(pageLength = 10, scrollX = TRUE), rownames = FALSE)
-  })
+
+    bc <- cm$byClass
+
+    # Caso multiclase: bc es una matriz (filas = clases, columnas = métricas)
+    if (is.matrix(bc)) {
+      df <- as.data.frame(round(bc, 3), stringsAsFactors = FALSE)
+      df$Clase <- gsub("^Class: ", "", rownames(df))
+      rownames(df) <- NULL
+      df <- df[, c("Clase", setdiff(names(df), "Clase"))]
+      if ("Balanced.Accuracy" %in% names(df)) {
+        df <- df[order(-df[["Balanced.Accuracy"]]), ]
+      }
+    } else {
+      # Caso binario: bc es un vector con nombre
+      df <- data.frame(
+        Clase = "Clase unica",
+        t(round(bc, 3)),
+        check.names      = TRUE,
+        stringsAsFactors = FALSE
+      )
+      rownames(df) <- NULL
+    }
+
+    names(df) <- make.names(names(df), unique = TRUE)
+
+    DT::datatable(
+      df,
+      rownames = FALSE,
+      class    = "compact stripe hover",
+      options  = list(
+        pageLength = 10,
+        dom        = "tip",
+        autoWidth  = TRUE,
+        scrollX    = FALSE
+      )
+    )
+  }, server = FALSE)
 
   output$met_confmat <- renderPlotly({
     cm <- metricas_rv(); req(cm); conf_plot(cm)
   })
 
+  # met_importancia: importancia del MEJOR modelo (RF o rpart según cuál ganó)
   output$met_importancia <- renderPlotly({
+    mod <- modelo_rv(); req(mod)
+
+    if (inherits(mod, "randomForest")) {
+      # --- Random Forest: MeanDecreaseGini ---
+      imp <- importance(mod)
+      df  <- data.frame(
+        Variable    = rownames(imp),
+        Importancia = imp[, "MeanDecreaseGini"]
+      ) %>% arrange(desc(Importancia))
+      fill_low  <- "#AED6F1"; fill_high <- "#1A5276"
+      y_label   <- "Mean Decrease Gini"
+    } else {
+      # --- Árbol de decisión (caret/rpart): Overall ---
+      imp <- varImp(mod)$importance
+      df  <- data.frame(
+        Variable    = rownames(imp),
+        Importancia = imp[, 1]
+      ) %>% arrange(desc(Importancia)) %>% head(15)
+      fill_low  <- "#F9E4B7"; fill_high <- "#E67E22"
+      y_label   <- "Importancia (Overall)"
+    }
+
+    p <- ggplot(df, aes(x = reorder(Variable, Importancia),
+                        y = Importancia, fill = Importancia,
+                        text = paste0(Variable, "<br>", round(Importancia, 3)))) +
+      geom_col(show.legend = FALSE) + coord_flip() +
+      scale_fill_gradient(low = fill_low, high = fill_high) +
+      labs(x = NULL, y = y_label) +
+      theme_minimal(base_size = 12)
+    ggplotly(p, tooltip = "text")
+  })
+
+  # plot_importancia_met: versión para la pestaña de métricas RF (ID distinto al de configuración)
+  output$plot_importancia_met <- renderPlotly({
     mod <- mod_rf_rv(); req(mod)
     imp <- importance(mod)
     df  <- data.frame(Variable    = rownames(imp),
@@ -744,22 +849,71 @@ server <- function(input, output, session) {
                  "Primero entrene o cargue un modelo."))
       return()
     }
+
+    # Mapear cada input al nivel mas cercano disponible en el modelo
+    safe_factor <- function(val, ref_factor) {
+      lvls <- levels(ref_factor)
+      val  <- as.character(val)
+      if (val %in% lvls) return(factor(val, levels = lvls))
+      moda <- names(sort(table(ref_factor), decreasing = TRUE))[1]
+      factor(moda, levels = lvls)
+    }
+
     nuevo <- data.frame(
-      SEXO        = factor(input$pm_sexo,   levels = levels(datos_modelo$SEXO)),
-      EST_CIVIL   = factor(input$pm_civil,  levels = levels(datos_modelo$EST_CIVIL)),
-      NIVEL_EDU   = factor(input$pm_edu,    levels = levels(datos_modelo$NIVEL_EDU)),
-      SEG_SOCIAL  = factor(input$pm_seg,    levels = levels(datos_modelo$SEG_SOCIAL)),
-      ETAREO_QUIN = factor(input$pm_etareo, levels = levels(datos_modelo$ETAREO_QUIN)),
+      SEXO        = safe_factor(input$pm_sexo,   datos_modelo$SEXO),
+      EST_CIVIL   = safe_factor(input$pm_civil,  datos_modelo$EST_CIVIL),
+      NIVEL_EDU   = safe_factor(input$pm_edu,    datos_modelo$NIVEL_EDU),
+      SEG_SOCIAL  = safe_factor(input$pm_seg,    datos_modelo$SEG_SOCIAL),
+      ETAREO_QUIN = safe_factor(input$pm_etareo, datos_modelo$ETAREO_QUIN),
       ANO         = as.integer(input$pm_ano),
       MES         = as.integer(input$pm_mes),
       EDAD_SIMPLE = as.integer(input$pm_edad)
     )
-    pred  <- predict(mod, nuevo)
-    probs <- predict(mod, nuevo, type = "prob")
-    pm_pred_rv(as.character(pred))
-    pm_probs_rv(as.data.frame(probs))
-    output$pm_alerta <- renderUI(
-      tags$div(class = "alert alert-success", "Predicción realizada correctamente."))
+
+    # Detectar campos ajustados por no estar en los datos de entrenamiento
+    campos_label <- c(
+      SEXO = "Sexo", EST_CIVIL = "Estado civil", NIVEL_EDU = "Nivel educativo",
+      SEG_SOCIAL = "Seg. social", ETAREO_QUIN = "Grupo etareo"
+    )
+    inputs_orig <- c(
+      SEXO = as.character(input$pm_sexo),   EST_CIVIL = as.character(input$pm_civil),
+      NIVEL_EDU = as.character(input$pm_edu), SEG_SOCIAL = as.character(input$pm_seg),
+      ETAREO_QUIN = as.character(input$pm_etareo)
+    )
+    ajustados <- names(inputs_orig)[sapply(names(inputs_orig), function(col) {
+      !(inputs_orig[col] %in% levels(datos_modelo[[col]]))
+    })]
+
+    tryCatch({
+      pred  <- predict(mod, nuevo)
+      probs <- predict(mod, nuevo, type = "prob")
+      pm_pred_rv(as.character(pred))
+      pm_probs_rv(as.data.frame(probs))
+
+      if (length(ajustados) > 0) {
+        labels_ajustados <- paste(campos_label[ajustados], collapse = ", ")
+        output$pm_alerta <- renderUI(
+          tags$div(class = "alert alert-warning",
+            icon("exclamation-triangle"),
+            tags$strong(" Prediccion con ajuste automatico. "),
+            tags$br(),
+            paste0("El valor de '", labels_ajustados,
+                   "' no existe en los datos de entrenamiento y fue reemplazado",
+                   " por la categoria mas frecuente.")
+          )
+        )
+      } else {
+        output$pm_alerta <- renderUI(
+          tags$div(class = "alert alert-success",
+            icon("check-circle"), " Prediccion realizada correctamente."))
+      }
+    }, error = function(e) {
+      output$pm_alerta <- renderUI(
+        tags$div(class = "alert alert-danger",
+          icon("times-circle"),
+          tags$strong(" Error en la prediccion: "),
+          conditionMessage(e)))
+    })
   })
 
   output$pm_resultado <- renderUI({
