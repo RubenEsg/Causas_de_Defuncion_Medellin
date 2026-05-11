@@ -327,6 +327,46 @@ datos_modelo <- datos %>%
 
 grupos_disponibles <- levels(datos_modelo$NOM_667_OPS_GRUPO)
 
+# ── Choices dinámicos para los formularios de predicción ──────
+etiqueta_edu <- function(cod) {
+  dict <- c(
+    "1"  = "Ninguno",
+    "2"  = "Preescolar",
+    "3"  = "Primaria",
+    "4"  = "Secundaria",
+    "5"  = "Media académica",
+    "6"  = "Media técnica",
+    "7"  = "Normalista",
+    "8"  = "Técnica profesional",
+    "9"  = "Tecnológica",
+    "10" = "Profesional",
+    "11" = "Especialización",
+    "12" = "Maestría",
+    "13" = "Doctorado"
+  )
+  ifelse(cod %in% names(dict), dict[cod], paste("Nivel", cod))
+}
+etiqueta_civil <- function(cod) {
+  dict <- c("1"="Soltero(a)","2"="Casado(a)","3"="Viudo(a)",
+            "4"="Separado(a)","5"="Unión libre","9"="Sin info")
+  ifelse(cod %in% names(dict), dict[cod], paste("EC", cod))
+}
+etiqueta_seg <- function(cod) {
+  dict <- c("1"="Contributivo","2"="Subsidiado","3"="Vinculado",
+            "4"="Especial","9"="Sin info")
+  ifelse(cod %in% names(dict), dict[cod], paste("Régimen", cod))
+}
+
+CHOICES_EDU   <- setNames(levels(datos_modelo$NIVEL_EDU),
+                          etiqueta_edu(levels(datos_modelo$NIVEL_EDU)))
+CHOICES_CIVIL <- setNames(levels(datos_modelo$EST_CIVIL),
+                          etiqueta_civil(levels(datos_modelo$EST_CIVIL)))
+CHOICES_SEG   <- setNames(levels(datos_modelo$SEG_SOCIAL),
+                          etiqueta_seg(levels(datos_modelo$SEG_SOCIAL)))
+CHOICES_SEXO  <- setNames(levels(datos_modelo$SEXO),
+                          c("1"="Masculino","2"="Femenino")[levels(datos_modelo$SEXO)])
+
+
 # ── Paleta de colores ─────────────────────────────────────────
 PAL <- c("#2C3E50","#E74C3C","#3498DB","#2ECC71","#F39C12",
          "#9B59B6","#1ABC9C","#E67E22","#D35400","#27AE60")

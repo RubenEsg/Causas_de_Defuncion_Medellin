@@ -229,38 +229,92 @@ server <- function(input, output, session) {
     df
   })
 
-  # ── VALUE BOXES EDA ───────────────────────────────────────
-  output$vb_total  <- renderValueBox(
-    valueBox(format(nrow(datos), big.mark = ","), "Registros totales",
-             icon("database"), color = "blue"))
-  output$vb_grupos <- renderValueBox(
-    valueBox(nlevels(datos$NOM_667_OPS_GRUPO), "Grupos de causa",
-             icon("tags"), color = "green"))
-  output$vb_anio   <- renderValueBox(
-    valueBox(paste(range(datos$ANO, na.rm=TRUE), collapse = " - "), "Periodo",
-             icon("calendar"), color = "orange"))
-  output$vb_edad_med <- renderValueBox({
+  # ── KPI CARDS GRANDES ─────────────────────────────────────────
+  output$kpi_total <- renderUI({
+    tags$div(class = "kpi-card",
+             tags$div(class = "kpi-icon", icon("database")),
+             tags$div(class = "kpi-value", format(nrow(datos), big.mark = ",")),
+             tags$div(class = "kpi-label", "Registros totales"),
+             tags$div(class = "kpi-sub", "Tras proceso de limpieza y validación")
+    )
+  })
+  
+  output$kpi_grupos <- renderUI({
+    tags$div(class = "kpi-card ac-green",
+             tags$div(class = "kpi-icon", icon("tags")),
+             tags$div(class = "kpi-value", nlevels(datos$NOM_667_OPS_GRUPO)),
+             tags$div(class = "kpi-label", "Grupos de causa"),
+             tags$div(class = "kpi-sub", "Nomenclatura OPS 667")
+    )
+  })
+  
+  output$kpi_periodo <- renderUI({
+    r <- range(datos$ANO, na.rm = TRUE)
+    tags$div(class = "kpi-card ac-amber",
+             tags$div(class = "kpi-icon", icon("calendar")),
+             tags$div(class = "kpi-value", paste(r, collapse = " – ")),
+             tags$div(class = "kpi-label", "Período analizado"),
+             tags$div(class = "kpi-sub", paste(diff(r) + 1, "años de registro continuo"))
+    )
+  })
+  
+  output$kpi_edad_med <- renderUI({
     med <- round(median(datos$EDAD_SIMPLE, na.rm = TRUE), 0)
-    valueBox(paste0(med, " anos"), "Edad mediana", icon("user"), color = "purple")
+    mn  <- min(datos$EDAD_SIMPLE, na.rm = TRUE)
+    mx  <- max(datos$EDAD_SIMPLE, na.rm = TRUE)
+    tags$div(class = "kpi-card ac-slate",
+             tags$div(class = "kpi-icon", icon("user")),
+             tags$div(class = "kpi-value", paste0(med, " años")),
+             tags$div(class = "kpi-label", "Edad mediana"),
+             tags$div(class = "kpi-sub", paste0("Rango: ", mn, " – ", mx, " años"))
+    )
   })
-  output$vb_masculino <- renderValueBox({
-    n <- sum(datos$SEXO == "1", na.rm = TRUE)
-    pct <- round(n / nrow(datos) * 100, 1)
-    valueBox(paste0(pct, "%"), "Masculino", icon("male"), color = "blue")
+  
+  # ── STAT CHIPS COMPACTOS ──────────────────────────────────────
+  output$stat_masculino <- renderUI({
+    pct <- round(sum(datos$SEXO == "1", na.rm = TRUE) / nrow(datos) * 100, 1)
+    tags$div(class = "stat-chip",
+             tags$div(class = "stat-chip-dot", style = "background:#6366f1;"),
+             tags$div(
+               tags$div(class = "stat-chip-val", paste0(pct, "%")),
+               tags$div(class = "stat-chip-lbl", "Masculino")
+             )
+    )
   })
-  output$vb_femenino <- renderValueBox({
-    n <- sum(datos$SEXO == "2", na.rm = TRUE)
-    pct <- round(n / nrow(datos) * 100, 1)
-    valueBox(paste0(pct, "%"), "Femenino", icon("female"), color = "fuchsia")
+  
+  output$stat_femenino <- renderUI({
+    pct <- round(sum(datos$SEXO == "2", na.rm = TRUE) / nrow(datos) * 100, 1)
+    tags$div(class = "stat-chip",
+             tags$div(class = "stat-chip-dot", style = "background:#ec4899;"),
+             tags$div(
+               tags$div(class = "stat-chip-val", paste0(pct, "%")),
+               tags$div(class = "stat-chip-lbl", "Femenino")
+             )
+    )
   })
-  output$vb_top_causa <- renderValueBox({
-    top <- datos %>% count(NOM_667_OPS_GRUPO) %>%
-      arrange(desc(n)) %>% slice(1) %>% pull(NOM_667_OPS_GRUPO)
-    valueBox(substr(top, 1, 28), "Causa mas frecuente", icon("heartbeat"), color = "red")
+  
+  output$stat_top_causa <- renderUI({
+    top <- datos %>% count(NOM_667_OPS_GRUPO) %>% arrange(desc(n)) %>% slice(1)
+    pct <- round(top$n / nrow(datos) * 100, 1)
+    lbl <- substr(as.character(top$NOM_667_OPS_GRUPO), 1, 24)
+    tags$div(class = "stat-chip",
+             tags$div(class = "stat-chip-dot", style = "background:#f59e0b;"),
+             tags$div(style = "min-width:0;",
+                      tags$div(class = "stat-chip-val", paste0(pct, "%")),
+                      tags$div(class = "stat-chip-lbl", lbl)
+             )
+    )
   })
-  output$vb_miss <- renderValueBox({
-    pct <- round(mean(is.na(datos)) * 100, 1)
-    valueBox(paste0(pct, "%"), "Datos faltantes", icon("exclamation"), color = "yellow")
+  
+  output$stat_miss <- renderUI({
+    pct <- round(mean(is.na(datos)) * 100, 2)
+    tags$div(class = "stat-chip",
+             tags$div(class = "stat-chip-dot", style = "background:#94a3b8;"),
+             tags$div(
+               tags$div(class = "stat-chip-val", paste0(pct, "%")),
+               tags$div(class = "stat-chip-lbl", "Datos faltantes")
+             )
+    )
   })
 
   # ── EDA RESUMEN: graficos ─────────────────────────────────
@@ -849,6 +903,7 @@ server <- function(input, output, session) {
                  "Primero entrene o cargue un modelo."))
       return()
     }
+    
     nuevo <- data.frame(
       SEXO        = factor(input$pm_sexo,   levels = levels(datos_modelo$SEXO)),
       EST_CIVIL   = factor(input$pm_civil,  levels = levels(datos_modelo$EST_CIVIL)),
@@ -859,6 +914,21 @@ server <- function(input, output, session) {
       MES         = as.integer(input$pm_mes),
       EDAD_SIMPLE = as.integer(input$pm_edad)
     )
+    
+    # ── Validación: detecta NAs causados por niveles inexistentes ──
+    vars_factor <- c("SEXO","EST_CIVIL","NIVEL_EDU","SEG_SOCIAL","ETAREO_QUIN")
+    vars_con_na <- vars_factor[sapply(vars_factor, function(v) is.na(nuevo[[v]]))]
+    
+    if (length(vars_con_na) > 0) {
+      output$pm_alerta <- renderUI(
+        tags$div(class = "alert alert-danger",
+                 icon("exclamation-triangle"),
+                 " El valor seleccionado no existe en los datos de entrenamiento para: ",
+                 tags$strong(paste(vars_con_na, collapse = ", ")),
+                 ". Verifique las opciones disponibles."))
+      return()
+    }
+    
     pred  <- predict(mod, nuevo)
     probs <- predict(mod, nuevo, type = "prob")
     pm_pred_rv(as.character(pred))
