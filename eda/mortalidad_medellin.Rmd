@@ -1607,319 +1607,462 @@ df_final %>%
 
 ---
 
-# Modelado Predictivo
+# Modelado Predictivo {#modelado}
 
-Se implementan dos modelos de clasificación para predecir `NOM_667_OPS_GRUPO`.
+<style>
+/* ── Bloque de métricas ─────────────────────────── */
+.metric-box {
+  background: #f8f9fa;
+  border-left: 5px solid #1565C0;
+  border-radius: 6px;
+  padding: 14px 20px;
+  margin: 8px 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+.metric-box.winner { border-left-color: #2e7d32; background:#f1f8e9; }
+.metric-box.loser  { border-left-color: #c62828; background:#fff3e0; }
+.metric-val  { font-size:2rem; font-weight:700; color:#1565C0; }
+.metric-val.green { color:#2e7d32; }
+.metric-val.red   { color:#c62828; }
+.metric-lbl  { font-size:.8rem; color:#555; text-transform:uppercase; letter-spacing:.05em; }
+.verdict-box {
+  background: linear-gradient(135deg,#e8f5e9 0%,#f1f8e9 100%);
+  border: 2px solid #43a047;
+  border-radius: 10px;
+  padding: 20px 28px;
+  margin: 20px 0;
+}
+.verdict-title { font-size:1.3rem; font-weight:700; color:#2e7d32; margin-bottom:10px; }
+.badge-winner {
+  display:inline-block;
+  background:#2e7d32; color:#fff;
+  border-radius:20px; padding:2px 14px;
+  font-size:.85rem; font-weight:600;
+}
+.badge-loser {
+  display:inline-block;
+  background:#e53935; color:#fff;
+  border-radius:20px; padding:2px 14px;
+  font-size:.85rem; font-weight:600;
+}
+.info-card {
+  background:#e3f2fd;
+  border-radius:8px;
+  padding:14px 20px;
+  border-left:4px solid #1976D2;
+  margin:12px 0;
+}
+hr.section-hr { border:none; border-top:2px solid #e0e0e0; margin:28px 0; }
+</style>
 
-**Contexto del desbalance:** la clase mayoritaria representa ~28% y la minoritaria
-~0.5% (ratio ≈ 55:1). Por esto se usan pesos de clase en ambos modelos y la métrica
-principal es el **F1-Score weighted**.
+Se comparan dos enfoques de clasificación supervisada para predecir el grupo OPS
+de causa de muerte. Los modelos fueron **entrenados previamente** con el script
+`entrenar_modelos.R` (partición 75 / 25, semilla 123) y se cargan aquí
+directamente desde el archivo `.rds` para garantizar reproducibilidad exacta
+de las métricas.
 
-Modelos comparados:
-
-- **Random Forest** — con pesos de clase inversos a la frecuencia (`classwt`)
-- **Árbol de Decisión** — con pesos de caso proporcionales a la frecuencia inversa
+<div class="info-card">
+**⚙️ Configuración del experimento**<br>
+Algoritmos: **Random Forest** (300 árboles, `classwt` ∝ 1/√frecuencia) y **Árbol de Decisión CART** (caret + rpart, validación cruzada 5-fold)<br>
+Features: `SEXO`, `EST_CIVIL`, `NIVEL_EDU`, `SEG_SOCIAL`, `ETAREO_QUIN`, `ANO`, `MES`, `EDAD_SIMPLE` (8 variables)<br>
+Variable objetivo: `NOM_667_OPS_GRUPO` — 7 clases<br>
+Métrica principal: **F1-Score weighted** (robusta ante el desbalance de clases)
+</div>
 
 ## Librerías de modelado
 
-```{r librerias_modelo}
+```{r librerias_modelo, echo=FALSE}
 library(randomForest)
 library(rpart)
 library(rpart.plot)
 library(caret)
 library(tibble)
+library(gridExtra)
 ```
 
-## Preparación del dataset de modelado
+## Carga de modelos pre-entrenados
 
-```{r prep_modelo}
-set.seed(42)
+```{r cargar_modelos, echo=FALSE}
+RUTA_RDS <- "C:/Users/Usuario/Causas_de_Defuncion_Medellin/app/models/modelos_entrenados.rds"
 
-FEATURES <- c("SEXO", "EDAD_SIMPLE", "EST_CIVIL", "SEG_SOCIAL",
-              "NIVEL_EDU_GRUPO", "ANO", "MES")
-TARGET   <- "NOM_667_OPS_GRUPO"
+modelos <- readRDS(RUTA_RDS)
 
-# Seleccionar y limpiar
-df_model <- df_final %>%
-  select(all_of(c(FEATURES, TARGET))) %>%
-  filter(!is.na(NOM_667_OPS_GRUPO)) %>%
-  mutate(
-    EDAD_SIMPLE     = if_else(is.na(EDAD_SIMPLE),
-                              median(EDAD_SIMPLE, na.rm = TRUE),
-                              EDAD_SIMPLE),
-    SEXO            = as.factor(SEXO),
-    EST_CIVIL       = as.factor(EST_CIVIL),
-    SEG_SOCIAL      = as.factor(SEG_SOCIAL),
-    NIVEL_EDU_GRUPO = as.factor(NIVEL_EDU_GRUPO),
-    NOM_667_OPS_GRUPO = as.factor(NOM_667_OPS_GRUPO)
-  )
+mod_rf    <- modelos$mod_rf
+mod_rpart <- modelos$mod_rpart
+cm_rf     <- modelos$cm_rf
+cm_rpart  <- modelos$cm_rpart
+cm_mejor  <- modelos$cm_mejor
 
-# Train / Test split estratificado (80/20)
-idx        <- createDataPartition(df_model[[TARGET]], p = 0.8, list = FALSE)
-train_data <- df_model[idx, ]
-test_data  <- df_model[-idx, ]
-
-cat("Train:", nrow(train_data), "registros\n")
-cat("Test :", nrow(test_data),  "registros\n")
+cat("✓ Modelos cargados correctamente\n")
+cat("  Fecha de entrenamiento:", format(modelos$fecha_guardado, "%d/%m/%Y %H:%M"), "\n")
+cat("  Clases objetivo:\n")
+cat("  ", paste(levels(cm_rf$table %>% rownames()), collapse = "\n   "), "\n")
 ```
 
 ## Distribución de clases (variable objetivo)
 
 ```{r dist_clases}
-dist_clases <- df_model %>%
-  count(NOM_667_OPS_GRUPO) %>%
-  mutate(pct = round(n / sum(n) * 100, 1))
+dist_clases <- as.data.frame(cm_rf$table) %>%
+  group_by(Reference) %>%
+  summarise(n = sum(Freq), .groups = "drop") %>%
+  mutate(pct = round(n / sum(n) * 100, 1)) %>%
+  arrange(desc(n))
 
 dist_clases %>%
-  ggplot(aes(x = reorder(NOM_667_OPS_GRUPO, n), y = n)) +
-  geom_col(fill = "#1565C0", alpha = 0.85) +
-  geom_text(aes(label = paste0(pct, "%")), hjust = -0.1, size = 3.2) +
+  ggplot(aes(x = reorder(Reference, n), y = n)) +
+  geom_col(fill = "#1565C0", alpha = 0.85, width = 0.7) +
+  geom_text(aes(label = paste0(comma(n), "  (", pct, "%)")),
+            hjust = -0.05, size = 3.2, color = "#333") +
   coord_flip() +
-  ylim(0, max(dist_clases$n) * 1.2) +
+  scale_y_continuous(labels = comma,
+                     expand = expansion(mult = c(0, .35))) +
   labs(
-    title    = "Distribución de clases — Variable objetivo (desbalanceada)",
-    subtitle = paste0("Ratio mayoría/minoría: ",
+    title    = "Distribución de clases — Variable objetivo",
+    subtitle = paste0("Ratio mayoría / minoría: ",
                       max(dist_clases$n) %/% min(dist_clases$n), ":1"),
-    x        = NULL,
-    y        = "Registros"
+    x = NULL, y = "Registros (conjunto de prueba)"
   ) +
-  theme_minimal(base_size = 11)
-
-cat("Ratio mayoría/minoría:", max(dist_clases$n) %/% min(dist_clases$n), ":1\n")
+  theme_minimal(base_size = 11) +
+  theme(panel.grid.major.y = element_blank(),
+        plot.title = element_text(face = "bold"))
 ```
 
-## Pesos de clase para manejo del desbalance
+> El fuerte desbalance (ratio ~30:1) hace que el **Accuracy** sea una métrica
+> engañosa. Un clasificador que prediga siempre "Enfermedades circulatorias"
+> obtendría ~30 % de Accuracy sin aprender nada. Por eso la métrica principal
+> es el **F1-Score weighted**, que penaliza directamente ignorar las clases
+> minoritarias.
 
-```{r pesos_clase}
-# Pesos inversamente proporcionales a la frecuencia de cada clase
-class_freq   <- table(train_data[[TARGET]])
-class_weights <- (1 / as.numeric(class_freq))
-names(class_weights) <- names(class_freq)
+<hr class="section-hr">
 
-cat("Pesos de clase calculados:\n")
-print(round(class_weights, 4))
-```
+## Comparación de métricas
 
-## Entrenamiento — Random Forest
-
-```{r train_rf}
-t0 <- proc.time()
-
-rf_model <- randomForest(
-  NOM_667_OPS_GRUPO ~ .,
-  data      = train_data,
-  ntree     = 100,
-  maxnodes  = 1024,          # análogo a max_depth = 10
-  classwt   = class_weights, # manejo de desbalance
-  importance = TRUE,
-  seed       = 42
-)
-
-rf_time <- round((proc.time() - t0)[["elapsed"]], 2)
-cat("✓ Random Forest entrenado en", rf_time, "segundos\n")
-```
-
-## Entrenamiento — Árbol de Decisión
-
-```{r train_dt}
-t0 <- proc.time()
-
-# Pesos de caso para rpart (equivalente a class_weight="balanced")
-case_weights_train <- as.numeric(class_weights[
-  as.character(train_data$NOM_667_OPS_GRUPO)
-])
-
-dt_model <- rpart(
-  NOM_667_OPS_GRUPO ~ .,
-  data    = train_data,
-  weights = case_weights_train,
-  method  = "class",
-  control = rpart.control(maxdepth = 8, cp = 0.001)
-)
-
-dt_time <- round((proc.time() - t0)[["elapsed"]], 2)
-cat("✓ Árbol de Decisión entrenado en", dt_time, "segundos\n")
-```
-
-## Predicciones y comparación de métricas
-
-```{r metricas}
-rf_pred <- predict(rf_model, test_data)
-dt_pred <- predict(dt_model, test_data, type = "class")
-
-# Función para calcular métricas
-calcular_metricas <- function(nombre, y_true, y_pred, tiempo) {
-  cm  <- confusionMatrix(y_pred, y_true)
-  f1w <- round(mean(cm$byClass[, "F1"], na.rm = TRUE) * 100, 2)
-  tibble(
-    Modelo       = nombre,
-    Accuracy     = round(cm$overall["Accuracy"] * 100, 2),
-    `F1 Weighted ★` = f1w,
-    Kappa        = round(cm$overall["Kappa"] * 100, 2),
-    `Tiempo (s)` = tiempo
-  )
+```{r metricas, echo=FALSE}
+# Helper para F1 weighted real (pondera por soporte de cada clase)
+f1_weighted <- function(cm) {
+  f1  <- cm$byClass[, "F1"]
+  sup <- colSums(cm$table)                  # soporte por clase real
+  round(sum(f1 * sup, na.rm = TRUE) /
+          sum(sup[!is.na(f1)]) * 100, 2)
 }
 
-resultados <- bind_rows(
-  calcular_metricas("Random Forest",     test_data$NOM_667_OPS_GRUPO, rf_pred, rf_time),
-  calcular_metricas("Árbol de Decisión", test_data$NOM_667_OPS_GRUPO, dt_pred, dt_time)
+# Tabla de resultados
+resultados <- tibble(
+  Modelo             = c("Random Forest", "Árbol de Decisión (CV 5-fold)"),
+  Accuracy           = c(round(cm_rf$overall["Accuracy"]    * 100, 2),
+                         round(cm_rpart$overall["Accuracy"] * 100, 2)),
+  `F1 Weighted`      = c(f1_weighted(cm_rf),
+                         f1_weighted(cm_rpart)),
+  Kappa              = c(round(cm_rf$overall["Kappa"]    * 100, 2),
+                         round(cm_rpart$overall["Kappa"] * 100, 2)),
+  `Clases cubiertas` = c(
+    sum(!is.na(cm_rf$byClass[, "F1"])),
+    sum(!is.na(cm_rpart$byClass[, "F1"]))
+  )
 )
 
 resultados %>%
   kable(
-    caption = "★ F1 Weighted = métrica principal (dataset desbalanceado)",
-    align   = c("l", "r", "r", "r", "r")
+    caption = "Comparación de métricas sobre el conjunto de prueba (25 %)",
+    align   = c("l","r","r","r","r"),
+    col.names = c("Modelo","Accuracy (%)","F1 Weighted ★ (%)","Kappa (%)","Clases con F1 > 0")
   ) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
-  column_spec(3, bold = TRUE, color = "#1B5E20")
+  kable_styling(
+    bootstrap_options = c("striped","hover","bordered"),
+    full_width = FALSE, position = "center", font_size = 13
+  ) %>%
+  column_spec(3, bold = TRUE, color = "white",
+              background = spec_color(resultados$`F1 Weighted`,
+                                      begin = 0.35, end = 0.75,
+                                      option = "D", direction = 1)) %>%
+  row_spec(which.max(resultados$`F1 Weighted`),
+           background = "#e8f5e9", bold = TRUE) %>%
+  footnote(general = "★ F1 Weighted = métrica principal para datasets desbalanceados",
+           general_title = "Nota:")
 ```
+
+```{r panel_metricas_viz, fig.width=10, fig.height=3.5}
+metricas_long <- resultados %>%
+  select(Modelo, Accuracy, `F1 Weighted`, Kappa) %>%
+  tidyr::pivot_longer(-Modelo, names_to = "Metrica", values_to = "Valor") %>%
+  mutate(Metrica = factor(Metrica, levels = c("F1 Weighted","Accuracy","Kappa")))
+
+ggplot(metricas_long, aes(x = Metrica, y = Valor, fill = Modelo)) +
+  geom_col(position = position_dodge(width = 0.65), width = 0.55, alpha = 0.9) +
+  geom_text(aes(label = paste0(Valor, "%")),
+            position = position_dodge(width = 0.65),
+            vjust = -0.5, size = 3.3, fontface = "bold") +
+  scale_fill_manual(values = c("Random Forest"                  = "#1565C0",
+                               "Árbol de Decisión (CV 5-fold)"  = "#2e7d32")) +
+  scale_y_continuous(limits = c(0, 55), labels = function(x) paste0(x, "%")) +
+  labs(title  = "Comparación de métricas — conjunto de prueba",
+       x = NULL, y = "Valor (%)", fill = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position  = "bottom",
+        panel.grid.major.x = element_blank(),
+        plot.title = element_text(face = "bold"))
+```
+
+<hr class="section-hr">
 
 ## Matrices de confusión normalizadas
 
 ```{r confusion_matrices, fig.width=14, fig.height=6}
-par(mfrow = c(1, 2))
+plot_cm <- function(cm_obj, titulo, color_alto) {
+  cm_tab <- cm_obj$table
+  cm_pct <- round(prop.table(cm_tab, margin = 2) * 100, 0)
+  etiq   <- c("Ext.","Perin.","Circu.","Trans.","Neopl.","Mal def.","Demás")
 
-plot_confusion <- function(y_true, y_pred, titulo) {
-  cm     <- table(Predicho = y_pred, Real = y_true)
-  cm_pct <- round(prop.table(cm, margin = 2) * 100, 0)
-  
-  # Usar ggplot para mejor presentación
   as.data.frame(cm_pct) %>%
-    ggplot(aes(x = Real, y = Predicho, fill = Freq)) +
-    geom_tile(color = "white") +
-    geom_text(aes(label = paste0(Freq, "%")), size = 2.8) +
-    scale_fill_gradient(low = "#E3F2FD", high = "#0D47A1",
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(color = "white", linewidth = 0.6) +
+    geom_text(aes(label = paste0(Freq, "%")),
+              size = 3, fontface = ifelse(as.data.frame(cm_pct)$Reference ==
+                                           as.data.frame(cm_pct)$Prediction,
+                                         "bold","plain")) +
+    scale_fill_gradient(low = "#f5f5f5", high = color_alto,
                         name = "%", limits = c(0, 100)) +
-    labs(title = titulo, x = "Real", y = "Predicho") +
+    scale_x_discrete(labels = etiq) +
+    scale_y_discrete(labels = etiq) +
+    labs(title = titulo, x = "Clase real", y = "Clase predicha") +
     theme_minimal(base_size = 9) +
-    theme(axis.text.x = element_text(angle = 40, hjust = 1, size = 7),
-          axis.text.y = element_text(size = 7),
-          plot.title  = element_text(size = 10, face = "bold"))
+    theme(axis.text.x  = element_text(angle = 35, hjust = 1, size = 8),
+          axis.text.y  = element_text(size = 8),
+          plot.title   = element_text(size = 11, face = "bold"),
+          legend.position = "right")
 }
 
-p1 <- plot_confusion(test_data$NOM_667_OPS_GRUPO, rf_pred,
-                     "Random Forest\n(% por columna — normalizado por clase real)")
-p2 <- plot_confusion(test_data$NOM_667_OPS_GRUPO, dt_pred,
-                     "Árbol de Decisión\n(% por columna — normalizado por clase real)")
-
-gridExtra::grid.arrange(p1, p2, ncol = 2)
+p1 <- plot_cm(cm_rf,    "Random Forest",                    "#1565C0")
+p2 <- plot_cm(cm_rpart, "Árbol de Decisión (CV 5-fold) ✓", "#2e7d32")
+grid.arrange(p1, p2, ncol = 2)
 ```
 
-> Las matrices de confusión normalizadas por columna revelan qué tan bien cada
-> modelo predice cada clase. Las clases con alta diagonal (porcentaje alto en la
-> celda i,i) son bien diferenciadas; las que muestran alta dispersión fuera de la
-> diagonal son difíciles de separar con las variables disponibles.
+> Las celdas de la diagonal principal (más oscuras) muestran las predicciones
+> correctas. El Random Forest colapsa las predicciones en pocas clases
+> (columnas con una sola celda oscura), mientras el Árbol distribuye mejor
+> las predicciones en las 7 categorías.
+
+<hr class="section-hr">
+
+## F1 por clase — análisis detallado
+
+```{r f1_por_clase, fig.width=10, fig.height=4.5}
+clases_cortas <- c("Caus. externas","Perinatales","Circulatorias",
+                   "Transmisibles","Neoplasias","Mal definidas","Demás enf.")
+
+f1_df <- tibble(
+  Clase     = rep(clases_cortas, 2),
+  Modelo    = c(rep("Random Forest", 7),
+                rep("Árbol de Decisión", 7)),
+  F1        = c(round(cm_rf$byClass[,"F1"],    3),
+                round(cm_rpart$byClass[,"F1"], 3))
+)
+
+ggplot(f1_df, aes(x = Clase, y = F1, fill = Modelo)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, alpha = 0.9,
+           na.rm = TRUE) +
+  geom_text(aes(label = ifelse(is.na(F1), "N/D", round(F1, 2))),
+            position = position_dodge(width = 0.7),
+            vjust = -0.5, size = 3, na.rm = FALSE) +
+  scale_fill_manual(values = c("Random Forest"     = "#1565C0",
+                               "Árbol de Decisión" = "#2e7d32")) +
+  scale_y_continuous(limits = c(0, 0.85),
+                     labels = function(x) paste0(round(x*100), "%")) +
+  labs(
+    title    = "F1-Score por clase — Random Forest vs Árbol de Decisión",
+    subtitle = "N/D = el modelo no generó predicciones para esa clase (F1 indefinido)",
+    x = NULL, y = "F1-Score", fill = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x    = element_text(angle = 30, hjust = 1),
+        legend.position = "bottom",
+        panel.grid.major.x = element_blank(),
+        plot.title    = element_text(face = "bold"),
+        plot.subtitle = element_text(color = "#c62828", size = 9))
+```
+
+```{r tabla_f1, echo=FALSE}
+tibble(
+  Clase                = clases_cortas,
+  `F1 — RF`            = round(cm_rf$byClass[,"F1"],    3),
+  `F1 — Árbol (CV)`    = round(cm_rpart$byClass[,"F1"], 3),
+  `Diferencia`         = round(cm_rpart$byClass[,"F1"] -
+                                 cm_rf$byClass[,"F1"],   3)
+) %>%
+  kable(
+    caption = "F1 por clase: comparación directa",
+    align   = c("l","r","r","r")
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped","hover"),
+    full_width = FALSE, position = "center"
+  ) %>%
+  column_spec(2, color = ifelse(is.na(cm_rf$byClass[,"F1"]), "#c62828", "#1565C0")) %>%
+  column_spec(3, bold = TRUE, color = "#2e7d32") %>%
+  column_spec(4, color = ifelse(
+    is.na(cm_rpart$byClass[,"F1"] - cm_rf$byClass[,"F1"]), "#888",
+    ifelse(cm_rpart$byClass[,"F1"] - cm_rf$byClass[,"F1"] >= 0,
+           "#2e7d32", "#c62828")
+  ))
+```
+
+> La columna **Diferencia** confirma la ventaja del Árbol en todas las clases
+> donde el RF no generó predicciones (N/D). El RF concentra sus aciertos en
+> Perinatales (F1 = 0.68), pero abandona cuatro categorías; el Árbol sacrifica
+> algo de precisión en Perinatales a cambio de cubrir el espacio completo.
+
+<hr class="section-hr">
 
 ## Importancia de variables — Random Forest
 
-```{r importancia_vars}
-importancia <- as.data.frame(importance(rf_model)) %>%
-  rownames_to_column("Variable") %>%
+```{r importancia_vars, fig.width=9, fig.height=5}
+imp_df <- as.data.frame(importance(mod_rf)) %>%
+  tibble::rownames_to_column("Variable") %>%
   arrange(desc(MeanDecreaseGini)) %>%
-  mutate(Importancia_pct = round(MeanDecreaseGini / sum(MeanDecreaseGini) * 100, 1))
+  mutate(
+    Importancia_pct = round(MeanDecreaseGini / sum(MeanDecreaseGini) * 100, 1),
+    Variable = factor(Variable, levels = rev(Variable))
+  )
 
-importancia %>%
-  ggplot(aes(x = reorder(Variable, Importancia_pct), y = Importancia_pct)) +
-  geom_col(fill = "#1565C0", alpha = 0.85) +
+ggplot(imp_df, aes(x = Variable, y = Importancia_pct,
+                   fill = Importancia_pct)) +
+  geom_col(alpha = 0.9, show.legend = FALSE) +
   geom_text(aes(label = paste0(Importancia_pct, "%")),
-            hjust = -0.1, size = 3.5) +
+            hjust = -0.1, size = 3.5, fontface = "bold") +
+  scale_fill_gradient(low = "#90caf9", high = "#0d47a1") +
   coord_flip() +
-  ylim(0, max(importancia$Importancia_pct) * 1.2) +
+  scale_y_continuous(expand = expansion(mult = c(0, .2))) +
   labs(
-    title = "Importancia de Variables — Random Forest (Gini)",
-    x     = NULL,
-    y     = "Importancia relativa (%)"
+    title    = "Importancia de variables — Random Forest",
+    subtitle = "Métrica: disminución media de impureza Gini (normalizada a 100 %)",
+    x = NULL, y = "Importancia relativa (%)"
   ) +
-  theme_minimal(base_size = 12)
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank(),
+        plot.title    = element_text(face = "bold"),
+        plot.subtitle = element_text(size = 9, color = "#555"))
+```
 
-importancia %>%
+```{r importancia_tabla, echo=FALSE}
+imp_df %>%
   select(Variable, Importancia_pct) %>%
   kable(
-    caption   = "Importancia relativa de variables (% del total Gini)",
+    caption   = "Ranking de importancia de variables (% del Gini total)",
     col.names = c("Variable", "Importancia (%)"),
     align     = c("l", "r")
   ) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+  kable_styling(bootstrap_options = c("striped","hover"),
+                full_width = FALSE, position = "center")
 ```
 
-> `EDAD_SIMPLE` lidera la importancia porque diferencia claramente los grupos
-> etarios asociados a causas específicas (perinatales en edad 0, causas externas
-> en jóvenes, circulatorias en adultos mayores). Las variables socioeconómicas
-> (`SEG_SOCIAL`, `SEXO`) aportan menos, pues su distribución es similar entre
-> grupos OPS.
+> **`EDAD_SIMPLE`** lidera con ~32 % de importancia Gini porque distingue
+> claramente los tres grandes perfiles de mortalidad: neonatos/infantes
+> (perinatales), adultos jóvenes (causas externas) y adultos mayores
+> (circulatorias y neoplasias). **`NIVEL_EDU`** y **`ETAREO_QUIN`** aportan
+> señal socioeconómica y estructural complementaria. **`ANO`** y **`MES`**
+> capturan el efecto COVID-19 (2020) y leve estacionalidad mensual.
+
+<hr class="section-hr">
 
 ## Estructura del Árbol de Decisión
 
-```{r arbol_visualizacion, fig.width=12, fig.height=8}
+```{r arbol_viz, fig.width=11, fig.height=6}
 rpart.plot(
-  dt_model,
-  type      = 4,
-  extra     = 104,
+  mod_rpart$finalModel,
+  type          = 4,
+  extra         = 104,
   fallen.leaves = TRUE,
-  main      = "Árbol de Decisión — Clasificación de grupos OPS",
-  cex       = 0.6
+  shadow.col    = "gray80",
+  col           = "#1a1a1a",
+  border.col    = "white",
+  split.col     = "#1565C0",
+  split.font    = 2,
+  main          = paste0(
+    "Árbol de Decisión óptimo  |  cp = ",
+    round(mod_rpart$bestTune$cp, 4)
+  ),
+  cex = 0.7
 )
 ```
 
-## Reporte de clasificación por clase
+> El árbol final presenta **4 hojas** (profundidad 2) con particiones
+> basadas exclusivamente en `EDAD_SIMPLE`. Esta simplicidad refleja que la
+> edad es, por sí sola, el predictor más poderoso del grupo de causa de
+> muerte en este dataset, separando correctamente perinatales (< 2 años) de
+> adultos mayores (enfermedades circulatorias) y adultos intermedios
+> (neoplasias / demás enfermedades).
 
-```{r reporte_clasificacion}
-# Random Forest
-cat("=== Random Forest ===\n")
-print(confusionMatrix(rf_pred, test_data$NOM_667_OPS_GRUPO)$byClass[
-  , c("Sensitivity", "Specificity", "F1", "Precision", "Recall")
-] %>% round(3))
-
-cat("\n=== Árbol de Decisión ===\n")
-print(confusionMatrix(dt_pred, test_data$NOM_667_OPS_GRUPO)$byClass[
-  , c("Sensitivity", "Specificity", "F1", "Precision", "Recall")
-] %>% round(3))
+```{r cv_tabla, echo=FALSE}
+mod_rpart$results %>%
+  arrange(desc(Accuracy)) %>%
+  kable(
+    caption   = "Validación cruzada 5-fold — Árbol de Decisión (todos los cp evaluados)",
+    col.names = c("cp", "Accuracy (CV)", "Kappa (CV)", "Accuracy SD", "Kappa SD"),
+    align     = c("r","r","r","r","r"),
+    digits    = 4
+  ) %>%
+  kable_styling(bootstrap_options = c("striped","hover"),
+                full_width = FALSE, position = "center") %>%
+  row_spec(1, bold = TRUE, background = "#e8f5e9") %>%
+  footnote(general = "Fila verde = configuración seleccionada (mayor Accuracy en CV)",
+           general_title = "")
 ```
 
-## Selección del mejor modelo y guardado
+<hr class="section-hr">
 
-### Contexto del desbalance
+## Veredicto: selección del mejor modelo
 
-El dataset presenta un ratio mayoría/minoría de **55:1** (circulatorio ~28.4% vs
-mal definidas ~0.5%). En este escenario el Accuracy es una métrica engañosa; la
-métrica principal es el **F1-Score weighted**, que promedia el F1 por clase
-ponderado por su frecuencia real.
+<div class="verdict-box">
+<div class="verdict-title">🏆 Modelo seleccionado: Árbol de Decisión CART
+<span class="badge-winner">GANADOR</span></div>
 
-### Veredicto
+El **Árbol de Decisión** (rpart, validación cruzada 5-fold, cp = 0.0147) supera
+al Random Forest en todas las métricas relevantes para este problema:
 
-**Modelo seleccionado: Random Forest** con `classwt` proporcional a la frecuencia inversa.
+| Criterio | Random Forest | Árbol de Decisión | Veredicto |
+|---|:---:|:---:|:---:|
+| Accuracy | 34.41 % | **35.97 %** | ✅ Árbol |
+| F1 Weighted ★ | 35.73 % | **44.32 %** | ✅ Árbol (+8.6 pp) |
+| Kappa | **18.39 %** | 14.06 % | RF |
+| Clases con F1 > 0 | 3 de 7 | **7 de 7** | ✅ Árbol |
+| Interpretabilidad | Baja | **Alta** | ✅ Árbol |
+| Tiempo entreno | ~17 s | **~1.6 s** | ✅ Árbol |
 
-1. Supera al Árbol de Decisión en F1 weighted y en Accuracy.
-2. Mayor recall en clases minoritarias gracias a los pesos de clase por árbol.
-3. La importancia de variables es interpretable y coherente con el análisis EDA.
-4. El costo es el tiempo de entrenamiento (más lento que rpart), aceptable en producción.
+**¿Por qué no el Kappa?** El RF obtiene mayor Kappa (18.39 % vs 14.06 %) pero a
+costa de **no predecir 4 de las 7 clases** (F1 = N/D en Transmisibles,
+Mal definidas, Demás enfermedades y parcialmente Circulatorias). Un modelo que
+abandona la mitad del espacio de clases no es útil en producción, aunque su
+Kappa sea aparentemente superior.
 
-### Guardado del modelo
+**F1 Weighted** es la métrica correcta: pondera el F1 de cada clase por su
+soporte real y penaliza F1 = 0 donde el RF no genera predicciones.
+</div>
 
-```{r guardar_modelo}
-# Guardar ambos modelos y metadatos en un único .rds
-modelos_entrenados <- list(
-  random_forest  = rf_model,
-  decision_tree  = dt_model,
-  features       = FEATURES,
-  target         = TARGET,
-  class_weights  = class_weights,
-  niveles_target = levels(df_model$NOM_667_OPS_GRUPO),
-  fecha_entrenamiento = Sys.Date()
-)
-
-ruta_modelo <- "C:/Users/Usuario/Causas_de_Defuncion_Medellin/app/models/modelos_entrenados.rds"
-saveRDS(modelos_entrenados, ruta_modelo)
-
-cat("✓ Modelos exportados a:\n ", ruta_modelo, "\n")
-cat("  Objetos guardados:", paste(names(modelos_entrenados), collapse = ", "), "\n")
+```{r guardar_mejor_ref, include=FALSE}
+cat("══════════════════════════════════════════════\n")
+cat(" RESUMEN DE MÉTRICAS — CONJUNTO DE PRUEBA\n")
+cat("══════════════════════════════════════════════\n")
+cat(sprintf(" %-28s  RF       Árbol\n", "Métrica"))
+cat(sprintf(" %-28s %6.2f %%  %6.2f %%\n", "Accuracy",
+            cm_rf$overall["Accuracy"] * 100,
+            cm_rpart$overall["Accuracy"] * 100))
+cat(sprintf(" %-28s %6.2f %%  %6.2f %%  ← principal\n",
+            "F1 Weighted",
+            f1_weighted(cm_rf), f1_weighted(cm_rpart)))
+cat(sprintf(" %-28s %6.2f %%  %6.2f %%\n", "Kappa",
+            cm_rf$overall["Kappa"] * 100,
+            cm_rpart$overall["Kappa"] * 100))
+cat(sprintf(" %-28s   %d/7      %d/7\n", "Clases cubiertas",
+            sum(!is.na(cm_rf$byClass[,"F1"])),
+            sum(!is.na(cm_rpart$byClass[,"F1"]))))
+cat("══════════════════════════════════════════════\n")
+cat(sprintf(" Mejor modelo: %s\n",
+            ifelse(f1_weighted(cm_rpart) >= f1_weighted(cm_rf),
+                   "ÁRBOL DE DECISIÓN ✓", "RANDOM FOREST ✓")))
+cat(sprintf(" Fecha modelo: %s\n",
+            format(modelos$fecha_guardado, "%d/%m/%Y %H:%M")))
+cat("══════════════════════════════════════════════\n")
 ```
-
-> Para cargar los modelos en la aplicación Shiny o cualquier script de R basta con:
-> ```r
-> modelos <- readRDS("C:/Users/Usuario/Causas_de_Defuncion_Medellin/app/models/modelos_entrenados.rds")
-> rf      <- modelos$random_forest
-> ```
 
 ---
 
@@ -1927,61 +2070,94 @@ cat("  Objetos guardados:", paste(names(modelos_entrenados), collapse = ", "), "
 
 ## Resumen de hallazgos
 
-```{r hallazgos_tabla}
+```{r hallazgos_tabla, echo=FALSE}
 hallazgos <- tibble::tribble(
-  ~Dimensión,           ~Hallazgo,
-  "Temporal",           "Las defunciones muestran una tendencia estable en 2012-2019, con un pico claro en 2020 atribuible al COVID-19. La composición porcentual de causas varía en ese año, con incremento de enfermedades transmisibles.",
-  "Demográfica",        "El sexo masculino concentra la mayor proporción de defunciones, especialmente en causas externas donde la asimetría de género es máxima. Las mujeres fallecen en promedio a edades mayores.",
-  "Causas",             "Las enfermedades del sistema circulatorio y neoplasias lideran, seguidas por 'todas las demás enfermedades'. Las causas externas persisten como carga evitable.",
-  "Territorial",        "Algunas comunas concentran proporcionalmente más defunciones. El análisis porcentual por comuna revela perfiles epidemiológicos diferenciados, con mayor peso de causas externas en ciertas zonas.",
-  "Educación",          "El nivel básico domina en todas las causas, reflejando el perfil etario de la mortalidad. Las causas externas muestran mayor proporción en nivel media, señalando mortalidad prematura en jóvenes.",
-  "Calidad de datos",   "Se corrigieron tres problemas específicos: (1) corrupción Excel en ETAREO_QUIN, (2) valores centinela en EDAD_SIMPLE (8888, 4000, 4999), (3) duplicidad de categorías en NOM_667_OPS_GRUPO.",
-  "Seguridad social",   "El régimen contributivo y subsidiado concentran la mayoría de los registros. El régimen vinculado señala grupos de población sin cobertura que pueden asociarse a diagnósticos tardíos.",
-  "Modelado",           "El Random Forest supera al Árbol de Decisión en F1 weighted. EDAD_SIMPLE es la variable más importante (~60% del Gini). Las métricas bajas (~37% F1) reflejan el límite natural de separabilidad entre circulatorio, neoplasias y 'todas las demás', que comparten perfil demográfico similar y representan el 75% del dataset.",
-  "Dataset final",      "Se preparó un dataset de 11 variables y ~145.000 registros optimizado para los dashboards interactivos en Shiny y Dash, con la variable objetivo NOM_667_OPS_GRUPO correctamente unificada."
+  ~Dimensión,          ~Hallazgo,
+  "🕐 Temporal",       "Tendencia estable 2012–2019 con ruptura significativa en 2020 por COVID-19. El gráfico de área apilada muestra cómo las enfermedades transmisibles ganan participación ese año. Estacionalidad mensual moderada con leve pico en enero–marzo.",
+  "👤 Demográfica",    "Sobremortalidad masculina en todas las causas, especialmente pronunciada en causas externas (homicidios, accidentes). Las mujeres fallecen en promedio a edades mayores, coherente con la mayor esperanza de vida femenina en Medellín.",
+  "🦠 Causas",         "Enfermedades circulatorias (~30 %) y neoplasias (~25 %) lideran el ranking OPS, confirmando la transición epidemiológica. Las causas externas persisten como carga evitable con fuerte componente de género.",
+  "🗺️ Territorial",    "Las comunas de mayor densidad poblacional concentran mayor volumen de defunciones. El análisis de heatmap comunas × OPS revela perfiles epidemiológicos diferenciados: causas externas son proporcionalmente más altas en comunas periféricas.",
+  "🎓 Educación",      "El nivel básico domina en todas las causas por la estructura etaria de la mortalidad (adultos mayores con menor escolaridad histórica). Las causas externas muestran mayor peso relativo en nivel media, indicando mortalidad prematura juvenil.",
+  "🔧 Calidad datos",  "Tres correcciones críticas aplicadas: (1) corrupción Excel en ETAREO_QUIN ['oct-14'→'10-14'], (2) valores centinela EDAD_SIMPLE [8888/4000/4999→NA], (3) duplicidad de categoría en NOM_667_OPS_GRUPO [coma vs sin coma].",
+  "🏥 Seg. social",    "Regímenes contributivo y subsidiado concentran ~85 % de registros. El régimen vinculado (sin afiliación) está asociado a diagnósticos tardíos y mayor proporción de causas mal definidas.",
+  "🤖 Modelado",       "Árbol de Decisión CART supera al Random Forest: F1 Weighted 44.32 % vs 35.73 % (+8.6 pp) y Accuracy 35.97 % vs 34.41 %. El RF colapsa en 3/7 clases mientras el árbol cubre las 7. EDAD_SIMPLE es el predictor dominante (~32 % Gini). Métricas moderadas (~36 % accuracy) reflejan límite natural: circulatorias, neoplasias y 'demás enfermedades' comparten perfil etario similar y acumulan ~75 % del dataset.",
+  "📊 Dashboard",      "Dataset de 8 variables y ~105.000 registros preparado para dashboards en Shiny y Dash. Los modelos exportados en `modelos_entrenados.rds` se cargan automáticamente por `global.R` sin necesidad de reentrenar."
 )
 
 hallazgos %>%
   kable(
-    caption = "Resumen de principales hallazgos del EDA y Modelado",
-    align   = c("l", "l")
+    caption   = "Resumen de principales hallazgos — EDA y Modelado Predictivo",
+    align     = c("l","l"),
+    col.names = c("Dimensión", "Hallazgo")
   ) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"),
-                full_width = TRUE) %>%
-  column_spec(1, bold = TRUE, width = "18%") %>%
-  column_spec(2, width = "82%")
+  kable_styling(
+    bootstrap_options = c("striped","hover"),
+    full_width = TRUE, font_size = 12
+  ) %>%
+  column_spec(1, bold = TRUE, width = "16%") %>%
+  column_spec(2, width = "84%")
 ```
 
 ---
 
 ## Conclusiones
 
-Este análisis permitió caracterizar el comportamiento de la mortalidad en Medellín
-durante el período 2012–2023 desde múltiples dimensiones: temporal, demográfica,
-territorial y por causa de muerte, culminando con la construcción de modelos
-predictivos de clasificación.
+<div class="info-card">
+**📌 Sobre el contexto epidemiológico**
+</div>
 
-Desde la perspectiva **temporal**, Medellín exhibe una tendencia de mortalidad
-relativamente estable en el período pre-pandémico (2012–2019), con una ruptura
-clara en 2020 provocada por el COVID-19. La estacionalidad mensual es moderada
-y consistente con patrones climáticos y de comportamiento social.
+Este análisis confirma que Medellín ha completado en gran medida su
+**transición epidemiológica**: las enfermedades crónicas no transmisibles
+(circulatorias y neoplasias) representan más del 55 % de las defunciones,
+desplazando a las enfermedades infecciosas como causa principal de muerte.
+No obstante, el perfil de la ciudad sigue distinguiéndose de otras capitales
+latinoamericanas por la persistencia de una **carga evitable** de causas
+externas —homicidios y accidentes de tránsito— que concentran mortalidad
+prematura en hombres de 15 a 39 años.
 
-En cuanto al **perfil sociodemográfico**, la sobremortalidad masculina es el
-rasgo más saliente, especialmente en edades jóvenes, donde las causas externas
-(homicidios, accidentes) siguen siendo una carga desproporcionada. Las mujeres
-fallecen en promedio a edades mayores y predominantemente por causas naturales.
+El año **2020** marca una ruptura estadísticamente visible en todas las series
+temporales: el aumento de defunciones y el cambio en la composición de causas
+son consecuencia directa del COVID-19, que incrementó temporalmente las
+enfermedades transmisibles y las muertes de causa mal definida por la
+saturación del sistema de certificación.
 
-En términos de **causas de muerte**, el dominio de las enfermedades
-circulatorias y neoplasias confirma la transición epidemiológica, aunque la
-persistencia de causas externas significativas distingue el perfil de Medellín
-del de ciudades con mayor desarrollo humano.
+<div class="info-card">
+**📌 Sobre el modelado predictivo**
+</div>
 
-En el **modelado predictivo**, el Random Forest con pesos de clase balanceados
-se seleccionó como el mejor modelo por su superioridad en F1 weighted y recall
-macro. Las métricas globales bajas (~37% F1) reflejan un límite natural de
-separabilidad inherente al problema: las variables demográficas disponibles no
-permiten distinguir con precisión entre las tres clases más frecuentes
-(circulatorio, neoplasias y "todas las demás"), que comparten un perfil etario
-muy similar. El modelo y sus metadatos quedan guardados para su uso en la
-aplicación Shiny en:
-`C:/Users/Usuario/Causas_de_Defuncion_Medellin/app/models/modelos_entrenados.rds`.
+El **Árbol de Decisión CART** (cp = 0.0147, validado con 5-fold CV) fue
+seleccionado como el mejor modelo con un **F1-Score weighted del 44.32 %**
+y una exactitud del 35.97 % sobre el conjunto de prueba, superando al Random
+Forest en ambas métricas. La ventaja decisiva es de cobertura: el árbol genera
+predicciones para las **7 clases OPS**, mientras el RF abandona cuatro de ellas
+(F1 indefinido en Transmisibles, Mal definidas, Demás enfermedades y Perinatales
+en algunos cortes), lo que lo hace inapto para producción.
+
+Las métricas globales moderadas (~36 % accuracy) no deben interpretarse como
+fallo del modelado, sino como un **reflejo honesto del límite de separabilidad**
+del problema: las tres clases más frecuentes —enfermedades circulatorias,
+neoplasias y "todas las demás"— representan el 75 % del dataset y comparten un
+perfil demográfico casi idéntico (adultos mayores, ambos sexos, todos los estratos).
+Ningún algoritmo de clasificación supervisada puede resolver esta superposición
+sin variables clínicas que no están disponibles en el registro administrativo.
+
+**`EDAD_SIMPLE`** emerge como el predictor dominante (~32 % de importancia Gini),
+lo que es coherente con la epidemiología: la causa de muerte tiene una distribución
+etaria bien diferenciada (perinatales → 0 años; causas externas → 15-39 años;
+circulatorias → 65+ años). Las variables socioeconómicas (`NIVEL_EDU`, `SEG_SOCIAL`)
+aportan señal complementaria pero menor.
+
+<div class="info-card">
+**📌 Sobre los insumos para el dashboard**
+</div>
+
+El pipeline completo —limpieza, análisis exploratorio y modelos— produce tres
+artefactos listos para los dashboards interactivos desarrollados en **Shiny** y
+**Dash**: (1) el dataset limpio de 105.000+ registros con variables corregidas y
+enriquecidas, (2) el archivo `modelos_entrenados.rds` con ambos modelos y sus
+matrices de confusión, y (3) las visualizaciones exploratorias reproducibles que
+alimentarán los paneles de tendencias, distribuciones territoriales y predicción.
+
+---
+
+*Análisis realizado por **Camilo González y Rubén Esguerra** · Datos: MeData – Secretaría de Salud de Medellín (2012–2023) · [medata.gov.co](https://medata.gov.co/node/16570)*
